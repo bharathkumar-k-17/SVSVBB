@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   signInWithEmailAndPassword,
@@ -6,13 +6,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   sendPasswordResetEmail,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-  EmailAuthProvider,
-  linkWithCredential,
+  createUserWithEmailAndPassword,
   updateProfile,
-  type ConfirmationResult,
-  type User as FirebaseUser,
 } from 'firebase/auth';
 import {
   doc,
@@ -26,7 +21,6 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { Mail, Lock, Eye, EyeOff, Loader2, User, Phone, Shield } from 'lucide-react';
-import { toIndianE164 } from '../lib/privacy';
 
 type TabMode = 'login' | 'signup';
 
@@ -68,11 +62,6 @@ export function Login() {
     admin: 0,
   });
   const [limitsLoaded, setLimitsLoaded] = useState(false);
-  const [otpStage, setOtpStage] = useState(false);
-  const [otp, setOtp] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
-  const [showSignInAfterOtp, setShowSignInAfterOtp] = useState(false);
 
   // Google Modal State
   const [pendingGoogleUser, setPendingGoogleUser] = useState<any>(null);
@@ -116,7 +105,7 @@ export function Login() {
     return roleLimits[r] >= ROLE_LIMITS[r];
   };
 
-  // ── LOGIN ──────────────────────────────────────────────
+  // â”€â”€ LOGIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -183,7 +172,7 @@ export function Login() {
     }
   };
 
-  // ── GOOGLE LOGIN ───────────────────────────────────────
+  // â”€â”€ GOOGLE LOGIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleGoogle = async () => {
     setLoginError('');
     setLoginLoading(true);
@@ -195,30 +184,11 @@ export function Login() {
       const snap = await getDoc(docRef);
 
       if (!snap.exists()) {
-        const usersSnap = await getDocs(query(collection(db, 'users'), limit(1)));
-        const isFirstUser = usersSnap.empty;
-        const defaultRole = isFirstUser ? 'super_admin' : 'volunteer';
-        const status = isFirstUser ? 'approved' : 'pending';
-
-        await setDoc(docRef, {
-          uid,
-          name: cred.user.displayName || cred.user.email?.split('@')[0] || 'Google User',
-          username: cred.user.email ? cred.user.email.split('@')[0].toLowerCase() : `user-${uid.slice(0, 6)}`,
-          email: cred.user.email || '',
-          phone: '',
-          photoURL: cred.user.photoURL || '',
-          role: defaultRole,
-          status,
-          createdAt: Date.now(),
-        });
-
-        if (status !== 'approved') {
-          await firebaseSignOut(auth);
-          setInfoMsg('Google account created. Waiting for admin approval.');
-          setTab('login');
-          setLoginLoading(false);
-          return;
-        }
+        // New Google user â€” show profile/role modal
+        setPendingGoogleUser(cred.user);
+        setGUsername(cred.user.email ? cred.user.email.split('@')[0].toLowerCase() : '');
+        setLoginLoading(false);
+        return;
       }
 
       await checkAndNavigate(uid);
@@ -289,7 +259,7 @@ export function Login() {
     navigate('/dashboard');
   };
 
-  // ── SIGNUP ─────────────────────────────────────────────
+  // â”€â”€ SIGNUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const validateSignup = () => {
     const errors: Record<string, string> = {};
     if (!name.trim()) errors.name = 'Full name is required';
@@ -306,98 +276,56 @@ export function Login() {
     return Object.keys(errors).length === 0;
   };
 
-  const getSignupVerifier = () => {
-    if (recaptchaVerifier) return recaptchaVerifier;
-    const verifier = new RecaptchaVerifier(auth, 'signup-recaptcha', { size: 'invisible' });
-    setRecaptchaVerifier(verifier);
-    return verifier;
-  };
-
-  const assertSignupAvailable = async () => {
-    if (ROLE_LIMITS[role] !== undefined && roleLimits[role] >= ROLE_LIMITS[role]) {
-      throw new Error(
-        `${role.charAt(0).toUpperCase() + role.slice(1)} slots are full (max ${ROLE_LIMITS[role]}).`,
-      );
-    }
-
-    const uQ = query(collection(db, 'users'), where('username', '==', username.toLowerCase().trim()));
-    const uSnap = await getDocs(uQ);
-    if (!uSnap.empty) throw new Error('Username is already taken');
-
-    const pQ = query(collection(db, 'users'), where('phone', '==', phone.trim()));
-    const pSnap = await getDocs(pQ);
-    if (!pSnap.empty) throw new Error('Phone number is already associated with another account');
-  };
-
-  const createSignupProfile = async (phoneUser: FirebaseUser) => {
-    await assertSignupAvailable();
-
-    const emailCredential = EmailAuthProvider.credential(email.trim(), password);
-    const linkedCredential = await linkWithCredential(phoneUser, emailCredential);
-    await updateProfile(linkedCredential.user, { displayName: name.trim() });
-
-    await setDoc(doc(db, 'users', linkedCredential.user.uid), {
-      uid: linkedCredential.user.uid,
-      name: name.trim(),
-      username: username.toLowerCase().trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      role,
-      photoURL: '',
-      status: 'pending',
-      createdAt: Date.now(),
-    });
-
-    await firebaseSignOut(auth);
-  };
-
   const handleSignup = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setSignupError('');
     setSignupSuccess('');
     if (!validateSignup()) return;
 
-    if (!otpStage) {
-      setSignupLoading(true);
-      try {
-        await assertSignupAvailable();
-        const verifier = getSignupVerifier();
-        const result = await signInWithPhoneNumber(auth, toIndianE164(phone), verifier);
-        setConfirmationResult(result);
-        setOtpStage(true);
-        setSignupSuccess('OTP sent successfully.');
-      } catch (err: any) {
-        setSignupError(err.message || 'Failed to send OTP.');
-        recaptchaVerifier?.clear();
-        setRecaptchaVerifier(null);
-      } finally {
-        setSignupLoading(false);
-      }
-      return;
-    }
-
-    if (!confirmationResult) {
-      setSignupError('OTP session expired. Send OTP again.');
-      setOtpStage(false);
-      return;
-    }
-
-    if (otp.length !== 6) {
-      setSignupError('Enter the 6-digit OTP.');
+    // Check role limits
+    if (ROLE_LIMITS[role] !== undefined && roleLimits[role] >= ROLE_LIMITS[role]) {
+      setSignupError(`${role} slots are full (max ${ROLE_LIMITS[role]}).`);
       return;
     }
 
     setSignupLoading(true);
     try {
-      const phoneCredential = await confirmationResult.confirm(otp);
-      await createSignupProfile(phoneCredential.user);
-      setShowSignInAfterOtp(true);
-      setSignupSuccess('Phone verified. Registration submitted for admin approval.');
+      // Check username uniqueness
+      const uQ = query(collection(db, 'users'), where('username', '==', username.toLowerCase().trim()));
+      const uSnap = await getDocs(uQ);
+      if (!uSnap.empty) throw new Error('Username is already taken');
+
+      // Check phone uniqueness
+      const pQ = query(collection(db, 'users'), where('phone', '==', phone.trim()));
+      const pSnap = await getDocs(pQ);
+      if (!pSnap.empty) throw new Error('Phone number is already associated with another account');
+
+      // Create account directly (no OTP)
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      await updateProfile(cred.user, { displayName: name.trim() });
+
+      await setDoc(doc(db, 'users', cred.user.uid), {
+        uid: cred.user.uid,
+        name: name.trim(),
+        username: username.toLowerCase().trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        role,
+        photoURL: '',
+        status: 'pending',
+        createdAt: Date.now(),
+      });
+
+      await firebaseSignOut(auth);
+      setSignupSuccess('Registration submitted! Please wait for admin approval, then login.');
+      setName(''); setUsername(''); setEmail(''); setPhone('');
+      setPassword(''); setConfirmPassword(''); setRole('volunteer');
+      setValidationErrors({});
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
         setSignupError('Email address is already in use.');
       } else {
-        setSignupError(err.message || 'OTP verification failed.');
+        setSignupError(err.message || 'Signup failed. Please try again.');
       }
     } finally {
       setSignupLoading(false);
@@ -413,10 +341,6 @@ export function Login() {
     setConfirmPassword('');
     setRole('volunteer');
     setValidationErrors({});
-    setOtpStage(false);
-    setOtp('');
-    setConfirmationResult(null);
-    setShowSignInAfterOtp(false);
   };
 
   const inputBase =
@@ -426,8 +350,8 @@ export function Login() {
 
   return (
     <div className="min-h-screen flex" style={{ background: 'linear-gradient(135deg, #2C1004 0%, #4A1C00 50%, #2C1004 100%)' }}>
-      <div id="signup-recaptcha" />
-      {/* Left Panel — Branding */}
+
+      {/* Left Panel â€” Branding */}
       <div className="hidden lg:flex lg:w-1/2 flex-col items-center justify-center px-12 text-center">
         {/* Glowing Om */}
         <div className="relative mb-8">
@@ -443,14 +367,14 @@ export function Login() {
           className="text-4xl lg:text-5xl font-extrabold mb-4 leading-tight text-center"
           style={{ color: '#FFD580', fontFamily: 'Georgia, serif', textShadow: '0 2px 16px rgba(255,200,0,0.4)' }}
         >
-          శ్రీ వరసిద్ధి వినాయక భక్త బృందం
+          à°¶à±à°°à±€ à°µà°°à°¸à°¿à°¦à±à°§à°¿ à°µà°¿à°¨à°¾à°¯à°• à°­à°•à±à°¤ à°¬à±ƒà°‚à°¦à°‚
           <span className="text-2xl mt-4 block opacity-90 tracking-widest font-sans uppercase">
             - since 2008 -
           </span>
         </h1>
       </div>
 
-      {/* Right Panel — Auth Card */}
+      {/* Right Panel â€” Auth Card */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6">
         <div
           className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
@@ -467,11 +391,11 @@ export function Login() {
               />
             </div>
             <div className="flex items-center justify-center gap-2 mb-6">
-              <span style={{ color: '#FF8C00', fontSize: '1.2rem' }}>🙏</span>
+              <span style={{ color: '#FF8C00', fontSize: '1.2rem' }}>ðŸ™</span>
               <h2 className="text-2xl font-bold tracking-widest uppercase" style={{ color: '#2C1004', letterSpacing: '0.2em' }}>
                 WELCOME
               </h2>
-              <span style={{ color: '#FF8C00', fontSize: '1.2rem' }}>🙏</span>
+              <span style={{ color: '#FF8C00', fontSize: '1.2rem' }}>ðŸ™</span>
             </div>
 
             {/* Tabs */}
@@ -488,7 +412,7 @@ export function Login() {
                 Login
               </button>
               <button
-                onClick={() => { setTab('signup'); setSignupError(''); setSignupSuccess(''); setOtpStage(false); setOtp(''); setShowSignInAfterOtp(false); }}
+                onClick={() => { setTab('signup'); setSignupError(''); setSignupSuccess(''); resetSignup(); }}
                 className="flex-1 py-2.5 text-sm font-bold transition-all"
                 style={
                   tab === 'signup'
@@ -501,7 +425,7 @@ export function Login() {
             </div>
           </div>
 
-          {/* ── LOGIN TAB ────────────────────────────────── */}
+          {/* â”€â”€ LOGIN TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {tab === 'login' && (
             <div className="px-8 pb-8">
               {infoMsg && (
@@ -574,7 +498,7 @@ export function Login() {
                   {loginLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
-                    <>{resetMode ? 'Send Reset Link' : '🙏 Login'}</>
+                    <>{resetMode ? 'Send Reset Link' : 'ðŸ™ Login'}</>
                   )}
                 </button>
               </form>
@@ -612,12 +536,12 @@ export function Login() {
             </div>
           )}
 
-          {/* ── SIGNUP TAB ───────────────────────────────── */}
+          {/* â”€â”€ SIGNUP TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {tab === 'signup' && (
             <div className="px-8 pb-8 max-h-[70vh] overflow-y-auto">
               {signupSuccess && (
                 <div className="mb-4 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm font-medium text-center">
-                  ✅ {signupSuccess}
+                  âœ… {signupSuccess}
                 </div>
               )}
               {signupError && (
@@ -626,20 +550,6 @@ export function Login() {
                 </div>
               )}
 
-              {showSignInAfterOtp ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInfoMsg('Registration submitted. Please sign in after admin approval.');
-                    setTab('login');
-                    resetSignup();
-                  }}
-                  className="w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all mt-2"
-                  style={{ background: 'linear-gradient(90deg, #EA580C, #F97316)', boxShadow: '0 4px 15px rgba(249,115,22,0.4)' }}
-                >
-                  Sign In
-                </button>
-              ) : (
               <form onSubmit={handleSignup} className="space-y-4" noValidate>
                 {/* Full Name */}
                 <div>
@@ -745,19 +655,19 @@ export function Login() {
                         value="admin"
                         disabled={isRoleFull('admin')}
                       >
-                        Admin{isRoleFull('admin') ? ' (Full — 5/5)' : ` (${roleLimits.admin}/5 slots)`}
+                        Admin{isRoleFull('admin') ? ' (Full â€” 5/5)' : ` (${roleLimits.admin}/5 slots)`}
                       </option>
                       <option
                         value="super_admin"
                         disabled={isRoleFull('super_admin')}
                       >
-                        Super Admin{isRoleFull('super_admin') ? ' (Full — 1/1)' : ` (${roleLimits.super_admin}/1 slot)`}
+                        Super Admin{isRoleFull('super_admin') ? ' (Full â€” 1/1)' : ` (${roleLimits.super_admin}/1 slot)`}
                       </option>
                     </select>
                   </div>
                   {(role === 'admin' || role === 'super_admin') && (
                     <p className="mt-1 text-xs text-orange-600 font-medium">
-                      ⚠️ {role === 'super_admin' ? 'Super Admin' : 'Admin'} registration requires manual approval.
+                      âš ï¸ {role === 'super_admin' ? 'Super Admin' : 'Admin'} registration requires manual approval.
                     </p>
                   )}
                 </div>
@@ -816,56 +726,23 @@ export function Login() {
                   {validationErrors.confirmPassword && <p className="mt-1 text-xs text-red-500">{validationErrors.confirmPassword}</p>}
                 </div>
 
-                {/* Submit / OTP Details */}
-                {!otpStage ? (
-                  <button
-                    type="submit"
-                    disabled={signupLoading || !limitsLoaded}
-                    className="w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all mt-2"
-                    style={{
-                      background: signupLoading ? '#FB923C' : 'linear-gradient(90deg, #EA580C, #F97316)',
-                      boxShadow: '0 4px 15px rgba(249,115,22,0.4)',
-                    }}
-                  >
-                    {signupLoading ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      'Send OTP'
-                    )}
-                  </button>
-                ) : (
-                  <div className="mt-4 p-4 border border-orange-200 rounded-xl bg-orange-50">
-                    <label className="block text-xs font-bold mb-1 tracking-widest uppercase text-center" style={{ color: '#7C2D12' }}>
-                      Enter 6-Digit OTP
-                    </label>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={otp}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, '');
-                        setOtp(val);
-                      }}
-                      className={`${inputNormal} text-center text-xl tracking-widest font-mono font-bold`}
-                      placeholder=""
-                    />
-                    <button
-                      type="submit"
-                      disabled={signupLoading || otp.length !== 6}
-                      className="mt-4 w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                      style={{ background: 'linear-gradient(90deg, #EA580C, #F97316)' }}
-                    >
-                      {signupLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Verify OTP'}
-                    </button>
-                    {signupLoading && (
-                      <div className="flex justify-center mt-2">
-                        <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={signupLoading || !limitsLoaded}
+                  className="w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all mt-2"
+                  style={{
+                    background: signupLoading ? '#FB923C' : 'linear-gradient(90deg, #EA580C, #F97316)',
+                    boxShadow: '0 4px 15px rgba(249,115,22,0.4)',
+                  }}
+                >
+                  {signupLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    'ðŸ™ Register'
+                  )}
+                </button>
               </form>
-              )}
 
               {/* Google Signup */}
               <div className="flex items-center gap-3 my-4">
@@ -889,7 +766,7 @@ export function Login() {
               </button>
             </div>
           )}
-          {/* ── GOOGLE PROFILE MODAL ───────────────────────── */}
+          {/* â”€â”€ GOOGLE PROFILE MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {pendingGoogleUser && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
