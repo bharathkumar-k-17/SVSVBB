@@ -1,0 +1,44 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "useDefineForClassFields": true,
+        "lib": [
+            "ES2020",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "module": "ESNext",
+        "skipLibCheck": true,
+        /* Bundler mode */
+        "moduleResolution": "bundler",
+        "allowImportingTsExtensions": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "noEmit": true,
+        "jsx": "react-jsx",
+        /* Linting */
+        "strict": true,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "noFallthroughCasesInSwitch": true
+    },
+    "include": [
+        "src/App.tsx",
+        "src/main.tsx",
+        "src/index.css",
+        "src/vite-env.d.ts",
+        "src/lib/**/*.ts",
+        "src/types/**/*.ts",
+        "src/contexts/**/*.tsx",
+        "src/components/AppShell.tsx",
+        "src/components/ui.tsx",
+        "src/components/ProtectedRoute.tsx",
+        "src/components/UpiPaymentModal.tsx",
+        "src/pages/**/*Page.tsx"
+    ],
+    "references": [
+        {
+            "path": "./tsconfig.node.json"
+        }
+    ]
+}

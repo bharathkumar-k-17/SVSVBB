@@ -1,0 +1,146 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  font-family: 'Inter', Georgia, "Palatino Linotype", "Book Antiqua", serif;
+
+  /* ── Brand Color System ── */
+  --primary:            24 95% 53%;   /* orange-500 */
+  --primary-foreground: 0 0% 100%;
+  --secondary:          38 95% 50%;   /* yellow-400 */
+  --secondary-foreground: 0 0% 100%;
+
+  --background:  0 0% 100%;
+  --foreground:  28 7% 11%;
+  --border:      24 10% 90%;
+  --input:       24 10% 90%;
+  --ring:        24 95% 53%;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  color: #1c1917;
+  background: #fffbf5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+::selection {
+  background: rgba(249, 115, 22, 0.22);
+}
+
+/* ── Custom Animations ── */
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.25s ease-out forwards;
+}
+
+@keyframes bounce-in {
+  0%   { opacity: 0; transform: scale(0.85) translateY(-8px); }
+  70%  { transform: scale(1.03) translateY(2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-bounce-in {
+  animation: bounce-in 0.3s ease-out forwards;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(249, 115, 22, 0.3); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(249, 115, 22, 0.6); }
+
+@page {
+  size: A4 portrait;
+  margin: 0; 
+}
+
+@media print {
+  html, body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #000000 !important;
+  }
+
+  /* Hide everything except the receipt when printing via window.print() */
+  body > * { display: none !important; }
+  body > #root { display: block !important; }
+  
+  /* Hide all UI except receipt content */
+  .print\:hidden { display: none !important; }
+  
+  /* Show only the receipt */
+  [data-print="receipt"] {
+    display: block !important;
+    position: fixed !important;
+    top: 0; left: 0; right: 0;
+    width: 100% !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+}
+
+/* ── PDF Export Mode Polyfills ── */
+.print-mode {
+  border: none !important;
+  box-shadow: none !important;
+  background: white !important;
+  color: black !important;
+}
+
+.print-mode .print\:flex {
+  display: flex !important;
+}
+
+.print-mode .print\:hidden {
+  display: none !important;
+}
+
+.print-mode .print\:border-black {
+  border-color: #000000 !important;
+}
+
+.print-mode .print\:text-black {
+  color: #000000 !important;
+}
+
+.print-mode .print\:bg-transparent {
+  background-color: transparent !important;
+}
+
+.print-mode .print\:divide-black\/20 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(0,0,0,0.2) !important;
+}
+
+.print-mode .print\:mt-4 {
+  margin-top: 1rem !important;
+}
