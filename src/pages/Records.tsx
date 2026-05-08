@@ -227,8 +227,11 @@ export function Records() {
     await updateDoc(doc(db, 'pooja_slots', slot.id), {
       reminderRequestedAt: Date.now(),
     });
-    const msg = `SVSVBB Pooja Booking Reminder\nFamily: ${slot.family_name || '-'}\nDate: ${slot.manual_date || slot.date || '-'}\nSlot: Day ${slot.day} ${slot.time}`;
-    window.open(buildWhatsAppUrl(slot.phone || '', msg), '_blank');
+    const activeFamily = (slot.families || []).find(f => f.status === 'active');
+    const familyName = activeFamily?.name || '-';
+    const familyPhone = activeFamily?.phone || '';
+    const msg = `SVSVBB Pooja Booking Reminder\nFamily: ${familyName}\nSlot: Day ${slot.day} ${slot.time}`;
+    window.open(buildWhatsAppUrl(familyPhone, msg), '_blank');
   };
 
   return (

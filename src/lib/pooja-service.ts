@@ -150,6 +150,6 @@ export const updateFestivalStartDate = async (date: string) => {
 };
 
 export const getFestivalStartDate = async () => {
-  const snap = await getDoc(doc(doc(db, 'settings', 'app')));
+  const snap = await getDoc(doc(db, 'settings', 'app'));
   return snap.exists() ? snap.data().festivalStartDate : null;
 };
