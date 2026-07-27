@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useAppStore } from '../store/appStore';
-import { doc, updateDoc, addDoc, collection, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
+import { createAdminNotification } from '../lib/notifications';
 import { X, CreditCard, Banknote, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -23,9 +23,13 @@ export function PaymentModal({ devotee, onClose }: PaymentModalProps) {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const snap = await getDoc(doc(db, 'settings', 'app'));
-        if (snap.exists() && snap.data().upiId) {
-          setUpiId(snap.data().upiId);
+        const { data } = await supabase
+          .from('app_settings')
+          .select('*')
+          .eq('id', 'app')
+          .single();
+        if (data?.upi_id) {
+          setUpiId(data.upi_id);
         }
       } catch (err) {
         console.error(err);
@@ -51,28 +55,46 @@ export function PaymentModal({ devotee, onClose }: PaymentModalProps) {
       const now = Date.now();
       
       // Add payment history
-      await addDoc(collection(db, 'payments'), {
-        devoteeId: devotee.id,
-        amount: numAmt,
-        mode,
-        transactionId: mode === 'UPI' ? transactionId : null,
-        date: now,
-        volunteerId: appUser.uid || 'admin',
-        volunteerName: appUser.name || 'Admin',
-        year: currentYear
-      });
+      const { error: paymentError } = await supabase
+        .from('payment_histories')
+        .insert({
+          devotee_id: devotee.id,
+          amount: numAmt,
+          mode,
+          transaction_id: mode === 'UPI' ? transactionId : null,
+          date: now,
+          volunteer_id: appUser.email || 'admin',
+          volunteer_name: appUser.name || 'Admin',
+          year: currentYear,
+        });
+
+      if (paymentError) throw paymentError;
 
       // Update devotee status
       const newPaid = devotee.paidAmount + numAmt;
       const newPending = devotee.totalAmount - newPaid;
       const status = newPending === 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : 'UNPAID');
 
-      await updateDoc(doc(db, 'devotees', devotee.id), {
-        paidAmount: newPaid,
-        pendingAmount: newPending,
-        paymentStatus: status,
-        paymentMode: mode
-      });
+      const { error: updateError } = await supabase
+        .from('devotees')
+        .update({
+          paid_amount: newPaid,
+          pending_amount: newPending,
+          payment_status: status,
+          payment_mode: mode,
+        })
+        .eq('id', devotee.id);
+
+      if (updateError) throw updateError;
+
+      if (appUser && appUser.role === 'volunteer') {
+        const amountStr = new Intl.NumberFormat('en-IN').format(numAmt);
+        await createAdminNotification({
+          actor: appUser,
+          type: 'CHANDA PAYMENT',
+          message: `${appUser.name || 'Volunteer'} recorded ₹${amountStr} payment from ${devotee.name || 'Unknown'}.`
+        });
+      }
 
       onClose();
     } catch (err: any) {

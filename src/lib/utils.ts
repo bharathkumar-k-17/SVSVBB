@@ -13,7 +13,7 @@ import type {
 export const APP_NAME = 'Sree Vara Sidhi Vinayaka Baktha Bhrundam';
 
 export const toRoleLabel = (role: AppUser['role']) => {
-  if (role === 'super_admin') return 'Super Admin';
+  if (role === 'superadmin') return 'Super Admin';
   if (role === 'admin') return 'Admin';
   return 'Volunteer';
 };

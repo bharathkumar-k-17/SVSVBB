@@ -1,37 +1,15 @@
-﻿import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  GoogleAuthProvider,
-  signInWithPopup,
-  sendPasswordResetEmail,
-  createUserWithEmailAndPassword,
-  updateProfile,
-} from 'firebase/auth';
-import {
-  doc,
-  getDoc,
-  setDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-  limit,
-} from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Loader2, User, Phone, Shield } from 'lucide-react';
+import { useAuthStore } from '../store/authStore';
+import { supabase } from '../lib/supabase';
 
 type TabMode = 'login' | 'signup';
-
-const ROLE_LIMITS: Record<string, number> = {
-  super_admin: 1,
-  admin: 5,
-};
 
 export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { supabaseUser, appUser: profile, signOut: logout, fetchAppUser, updateLastLogin } = useAuthStore();
 
   const [tab, setTab] = useState<TabMode>(location.pathname === '/signup' ? 'signup' : 'login');
 
@@ -57,17 +35,6 @@ export function Login() {
   const [signupError, setSignupError] = useState('');
   const [signupSuccess, setSignupSuccess] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-  const [roleLimits, setRoleLimits] = useState<Record<string, number>>({
-    super_admin: 0,
-    admin: 0,
-  });
-  const [limitsLoaded, setLimitsLoaded] = useState(false);
-
-  // Google Modal State
-  const [pendingGoogleUser, setPendingGoogleUser] = useState<any>(null);
-  const [gUsername, setGUsername] = useState('');
-  const [gPhone, setGPhone] = useState('');
-  const [gRole, setGRole] = useState<'volunteer' | 'admin' | 'super_admin'>('volunteer');
 
   // Info message from redirect
   const [infoMsg, setInfoMsg] = useState(location.state?.message || '');
@@ -78,34 +45,20 @@ export function Login() {
       setInfoMsg(location.state.message);
       window.history.replaceState({}, document.title);
     }
-  }, []);
+  }, [location.state?.message]);
 
-  // Fetch existing role counts on mount
   useEffect(() => {
-    const fetchRoleCounts = async () => {
-      try {
-        const counts: Record<string, number> = { super_admin: 0, admin: 0 };
-        for (const r of ['super_admin', 'admin']) {
-          const q = query(collection(db, 'users'), where('role', '==', r));
-          const snap = await getDocs(q);
-          counts[r] = snap.size;
-        }
-        setRoleLimits(counts);
-      } catch {
-        // ignore
-      } finally {
-        setLimitsLoaded(true);
-      }
-    };
-    fetchRoleCounts();
-  }, []);
+    if (supabaseUser && profile?.status === 'pending') {
+      setLoginError("Your account is pending Superadmin approval.");
+      logout();
+    }
+  }, [supabaseUser, profile, logout]);
 
-  const isRoleFull = (r: string) => {
-    if (!ROLE_LIMITS[r]) return false;
-    return roleLimits[r] >= ROLE_LIMITS[r];
-  };
+  if (supabaseUser && profile?.status === 'approved') {
+    return <Navigate to="/dashboard" replace />;
+  }
 
-  // â”€â”€ LOGIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- LOGIN -------------------------------------------------------------
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -119,7 +72,10 @@ export function Login() {
       }
       setLoginLoading(true);
       try {
-        await sendPasswordResetEmail(auth, loginEmail.trim());
+        const { error } = await supabase.auth.resetPasswordForEmail(loginEmail.trim(), {
+          redirectTo: `${window.location.origin}/login`
+        });
+        if (error) throw new Error(error.message);
         setInfoMsg('Password reset link sent! Check your inbox.');
         setResetMode(false);
       } catch (err: any) {
@@ -138,19 +94,16 @@ export function Login() {
     try {
       let finalEmail = loginEmail.trim();
 
-      // IF IT DOESN'T LOOK LIKE AN EMAIL, resolve username or phone
+      // IF IT DOESN'T LOOK LIKE AN EMAIL, resolve username or phone using Supabase
       if (!finalEmail.includes('@')) {
-        const usersRef = collection(db, 'users');
-        const usernameQ = query(usersRef, where('username', '==', finalEmail.toLowerCase().trim()));
-        let snap = await getDocs(usernameQ);
+        const { data } = await supabase
+          .from('users')
+          .select('email')
+          .or(`username.eq.${finalEmail.toLowerCase()},phone.eq.${finalEmail}`)
+          .maybeSingle();
         
-        if (snap.empty) {
-          const phoneQ = query(usersRef, where('phone', '==', finalEmail.trim()));
-          snap = await getDocs(phoneQ);
-        }
-
-        if (!snap.empty) {
-          finalEmail = snap.docs[0].data().email;
+        if (data && data.email) {
+          finalEmail = data.email;
         } else {
           setLoginError('No account found with this username or phone number.');
           setLoginLoading(false);
@@ -158,108 +111,40 @@ export function Login() {
         }
       }
 
-      const cred = await signInWithEmailAndPassword(auth, finalEmail, loginPassword);
-      await checkAndNavigate(cred.user.uid);
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: finalEmail, password: loginPassword });
+      if (signInError) throw new Error(signInError.message);
+      if (!data.user) throw new Error('Login failed');
+      
+      await fetchAppUser(data.user.id);
+      await updateLastLogin(data.user.id);
+
     } catch (err: any) {
-      await firebaseSignOut(auth).catch(() => {});
-      if (err.code === 'auth/invalid-credential') {
-        setLoginError('Invalid email or password.');
-      } else {
-        setLoginError(err.message || 'Authentication failed.');
-      }
+      setLoginError(err.message || 'Authentication failed.');
     } finally {
       setLoginLoading(false);
     }
   };
 
-  // â”€â”€ GOOGLE LOGIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- GOOGLE LOGIN ---------------------------------------------------------
   const handleGoogle = async () => {
     setLoginError('');
     setLoginLoading(true);
-    const provider = new GoogleAuthProvider();
     try {
-      const cred = await signInWithPopup(auth, provider);
-      const uid = cred.user.uid;
-      const docRef = doc(db, 'users', uid);
-      const snap = await getDoc(docRef);
-
-      if (!snap.exists()) {
-        // New Google user â€” show profile/role modal
-        setPendingGoogleUser(cred.user);
-        setGUsername(cred.user.email ? cred.user.email.split('@')[0].toLowerCase() : '');
-        setLoginLoading(false);
-        return;
-      }
-
-      await checkAndNavigate(uid);
+      const { error: googleError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/login`
+        }
+      });
+      if (googleError) throw new Error(googleError.message);
     } catch (err: any) {
-      await firebaseSignOut(auth).catch(() => {});
       setLoginError(err.message || 'Google sign-in failed.');
     } finally {
       setLoginLoading(false);
     }
   };
 
-  const submitGoogleProfile = async () => {
-    if (!pendingGoogleUser) return;
-    setLoginError('');
-    if (!gUsername.trim()) { setLoginError('Username required'); return; }
-    
-    // Check limits
-    if (ROLE_LIMITS[gRole] !== undefined && roleLimits[gRole] >= ROLE_LIMITS[gRole]) {
-      setLoginError(`${gRole} role is full.`);
-      return;
-    }
-
-    setLoginLoading(true);
-    try {
-      // Check username
-      const q = query(collection(db, 'users'), where('username', '==', gUsername.toLowerCase().trim()));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        setLoginError('Username is already taken');
-        setLoginLoading(false);
-        return;
-      }
-
-      await setDoc(doc(db, 'users', pendingGoogleUser.uid), {
-        name: pendingGoogleUser.displayName || '',
-        username: gUsername.toLowerCase().trim(),
-        email: pendingGoogleUser.email || '',
-        phone: gPhone.trim(),
-        photoURL: pendingGoogleUser.photoURL || '',
-        role: gRole,
-        status: 'pending',
-        createdAt: Date.now(),
-      });
-      await firebaseSignOut(auth);
-      setPendingGoogleUser(null);
-      setInfoMsg('Google account registered! Waiting for admin approval.');
-      setTab('login');
-    } catch (err: any) {
-      setLoginError(err.message || 'Profile setup failed.');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const checkAndNavigate = async (uid: string) => {
-    const snap = await getDoc(doc(db, 'users', uid));
-    if (!snap.exists()) {
-      await firebaseSignOut(auth);
-      setLoginError('User profile not found in system.');
-      return;
-    }
-    const data = snap.data();
-    if (data.status !== 'approved') {
-      await firebaseSignOut(auth);
-      setLoginError('Your account is pending approval. Please wait for admin to approve.');
-      return;
-    }
-    navigate('/dashboard');
-  };
-
-  // â”€â”€ SIGNUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- SIGNUP --------------------------------------------------------------
   const validateSignup = () => {
     const errors: Record<string, string> = {};
     if (!name.trim()) errors.name = 'Full name is required';
@@ -282,51 +167,58 @@ export function Login() {
     setSignupSuccess('');
     if (!validateSignup()) return;
 
-    // Check role limits
-    if (ROLE_LIMITS[role] !== undefined && roleLimits[role] >= ROLE_LIMITS[role]) {
-      setSignupError(`${role} slots are full (max ${ROLE_LIMITS[role]}).`);
-      return;
-    }
-
     setSignupLoading(true);
     try {
-      // Check username uniqueness
-      const uQ = query(collection(db, 'users'), where('username', '==', username.toLowerCase().trim()));
-      const uSnap = await getDocs(uQ);
-      if (!uSnap.empty) throw new Error('Username is already taken');
+      const normEmail = email.trim().toLowerCase();
+      const normUsername = username.trim().toLowerCase();
+      const normName = name.trim();
+      const normPhone = phone.trim();
+      const normRole = role;
 
-      // Check phone uniqueness
-      const pQ = query(collection(db, 'users'), where('phone', '==', phone.trim()));
-      const pSnap = await getDocs(pQ);
-      if (!pSnap.empty) throw new Error('Phone number is already associated with another account');
+      if (normUsername) {
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('username')
+          .eq('username', normUsername)
+          .limit(1);
+        
+        if (existingUser && existingUser.length > 0) {
+          throw new Error('Username is already taken.');
+        }
+      }
 
-      // Create account directly (no OTP)
-      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      await updateProfile(cred.user, { displayName: name.trim() });
-
-      await setDoc(doc(db, 'users', cred.user.uid), {
-        uid: cred.user.uid,
-        name: name.trim(),
-        username: username.toLowerCase().trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        role,
-        photoURL: '',
-        status: 'pending',
-        createdAt: Date.now(),
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: normEmail,
+        password,
+        options: {
+          data: { full_name: normName, username: normUsername, role: normRole, phone: normPhone }
+        }
       });
 
-      await firebaseSignOut(auth);
-      setSignupSuccess('Registration submitted! Please wait for admin approval, then login.');
+      if (signUpError) throw new Error(signUpError.message);
+      if (!authData.user) throw new Error('Signup failed – no user returned.');
+
+      if (authData.session) {
+        const { error: dbError } = await supabase.from('users').insert({
+          id: authData.user.id,
+          email: normEmail,
+          name: normName,
+          username: normUsername,
+          phone: normPhone,
+          role: normRole,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        });
+        if (dbError) throw new Error(dbError.message);
+        await supabase.auth.signOut();
+      }
+
+      setSignupSuccess('Registration submitted. Please wait for Superadmin approval.');
       setName(''); setUsername(''); setEmail(''); setPhone('');
       setPassword(''); setConfirmPassword(''); setRole('volunteer');
       setValidationErrors({});
     } catch (err: any) {
-      if (err.code === 'auth/email-already-in-use') {
-        setSignupError('Email address is already in use.');
-      } else {
-        setSignupError(err.message || 'Signup failed. Please try again.');
-      }
+      setSignupError(err.message || 'Signup failed. Please try again.');
     } finally {
       setSignupLoading(false);
     }
@@ -425,7 +317,7 @@ export function Login() {
             </div>
           </div>
 
-          {/* â”€â”€ LOGIN TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* â”€â”€ LOGIN TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {tab === 'login' && (
             <div className="px-8 pb-8">
               {infoMsg && (
@@ -458,7 +350,6 @@ export function Login() {
                     />
                   </div>
                 </div>
-
 
                 {/* Password only if not resetting */}
                 {!resetMode && (
@@ -536,7 +427,7 @@ export function Login() {
             </div>
           )}
 
-          {/* â”€â”€ SIGNUP TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* â”€â”€ SIGNUP TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {tab === 'signup' && (
             <div className="px-8 pb-8 max-h-[70vh] overflow-y-auto">
               {signupSuccess && (
@@ -648,21 +539,9 @@ export function Login() {
                       value={role}
                       onChange={(e) => setRole(e.target.value as any)}
                       className={`${inputNormal} cursor-pointer appearance-none`}
-                      disabled={!limitsLoaded}
                     >
                       <option value="volunteer">Volunteer</option>
-                      <option
-                        value="admin"
-                        disabled={isRoleFull('admin')}
-                      >
-                        Admin{isRoleFull('admin') ? ' (Full â€” 5/5)' : ` (${roleLimits.admin}/5 slots)`}
-                      </option>
-                      <option
-                        value="super_admin"
-                        disabled={isRoleFull('super_admin')}
-                      >
-                        Super Admin{isRoleFull('super_admin') ? ' (Full â€” 1/1)' : ` (${roleLimits.super_admin}/1 slot)`}
-                      </option>
+                      <option value="admin">Admin</option>
                     </select>
                   </div>
                   {(role === 'admin' || role === 'super_admin') && (
@@ -729,7 +608,7 @@ export function Login() {
                 {/* Submit */}
                 <button
                   type="submit"
-                  disabled={signupLoading || !limitsLoaded}
+                  disabled={signupLoading}
                   className="w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all mt-2"
                   style={{
                     background: signupLoading ? '#FB923C' : 'linear-gradient(90deg, #EA580C, #F97316)',
@@ -766,65 +645,6 @@ export function Login() {
               </button>
             </div>
           )}
-          {/* â”€â”€ GOOGLE PROFILE MODAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-          {pendingGoogleUser && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                <h2 className="text-xl font-bold text-gray-900 mb-2">Complete Profile</h2>
-                <div className="space-y-4">
-                  {loginError && <p className="text-xs text-red-600 font-bold">{loginError}</p>}
-                  
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-gray-700">Username</label>
-                    <input 
-                      type="text" 
-                      value={gUsername} 
-                      onChange={e => setGUsername(e.target.value.toLowerCase().replace(/\s/g, ''))} 
-                      className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-400" 
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-gray-700">Phone Number</label>
-                    <input 
-                      type="tel" 
-                      value={gPhone} 
-                      onChange={e => { const val = e.target.value.replace(/\D/g, ''); if(val.length <= 10) setGPhone(val); }} 
-                      className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-400" 
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-gray-700">Role Request</label>
-                    <select 
-                      value={gRole} 
-                      onChange={(e) => setGRole(e.target.value as any)} 
-                      className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-400"
-                    >
-                      <option value="volunteer">Volunteer</option>
-                      <option value="admin" disabled={isRoleFull('admin')}>Admin {isRoleFull('admin') ? '(Full)' : ''}</option>
-                      <option value="super_admin" disabled={isRoleFull('super_admin')}>Super Admin {isRoleFull('super_admin') ? '(Full)' : ''}</option>
-                    </select>
-                  </div>
-
-                  <button 
-                    onClick={submitGoogleProfile}
-                    disabled={loginLoading}
-                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-2.5 rounded-xl transition-colors disabled:opacity-50"
-                  >
-                    {loginLoading ? 'Saving...' : 'Finish Signup'}
-                  </button>
-                  <button 
-                    onClick={() => { setPendingGoogleUser(null); firebaseSignOut(auth); }}
-                    className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
         </div>
       </div>
     </div>

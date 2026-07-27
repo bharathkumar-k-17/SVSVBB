@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
@@ -9,20 +9,27 @@ import {
   IndianRupee, TrendingDown, CalendarCheck2, HandCoins
 } from 'lucide-react';
 import { maskPhoneNumber } from '../lib/privacy';
+import { useDashboardStats } from '../hooks/queries';
 
 export function Dashboard() {
-  const {
-    currentYear, devotees, expenses, vipGotrams,
-    setYear, initialized
-  } = useAppStore();
+  const { currentYear, setYear } = useAppStore();
   const { appUser } = useAuthStore();
   const navigate = useNavigate();
 
-  const totalCollected = devotees.reduce((s, d) => s + (d.paidAmount || 0), 0);
-  const totalPending   = devotees.reduce((s, d) => s + (d.pendingAmount || 0), 0);
-  const totalExpenses  = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const isVolunteer = appUser?.role === 'volunteer';
+  const { data: stats, isLoading } = useDashboardStats(currentYear);
+
+  const totalCollected = stats?.totalCollected || 0;
+  const totalPending   = stats?.totalPending || 0;
+  const totalExpenses  = stats?.totalExpenses || 0;
+  const todayCollection = stats?.todayCollection || 0;
+  const vipCount       = stats?.vipCount || 0;
+  const devoteesCount  = stats?.devoteesCount || 0;
+  const myTodayCollection = stats?.myTodayCollection || 0;
+  const myDevoteesCount = stats?.myDevoteesCount || 0;
+  const expensesCount = stats?.expensesCount || 0;
+
   const netBalance     = totalCollected - totalExpenses;
-  const vipCount       = vipGotrams.length;
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -31,18 +38,6 @@ export function Dashboard() {
     return 'శుభ సాయంత్రం 🌙';
   };
 
-  const isVolunteer = appUser?.role === 'volunteer';
-  const myTodayCollection = devotees
-    .filter(d => 
-      d.volunteerId === appUser?.uid && 
-      new Date(d.createdAt).toDateString() === new Date().toDateString()
-    )
-    .reduce((s, d) => s + (d.paidAmount || 0), 0);
-
-  const todayCollection = devotees
-    .filter(d => new Date(d.createdAt).toDateString() === new Date().toDateString())
-    .reduce((s, d) => s + (d.paidAmount || 0), 0);
-
   const actionCards = [
     {
       id: 'chanda',
@@ -50,7 +45,7 @@ export function Dashboard() {
       path: '/chanda',
       image: '/Chandaentry.jpeg',
       stats: [
-        { text: `${isVolunteer ? devotees.filter(d => d.volunteerId === appUser?.uid && new Date(d.createdAt).toDateString() === new Date().toDateString()).length : devotees.length} entries`, classes: 'text-purple-700 bg-purple-50 border-purple-100' },
+        { text: `${isVolunteer ? myDevoteesCount : devoteesCount} entries`, classes: 'text-purple-700 bg-purple-50 border-purple-100' },
         { text: `₹${(isVolunteer ? myTodayCollection : totalCollected).toLocaleString()} collected`, classes: 'text-pink-700 bg-pink-50 border-pink-100' },
       ],
       show: true,
@@ -61,7 +56,7 @@ export function Dashboard() {
       path: '/expenses',
       image: '/Expenses list.jpeg',
       stats: [
-        { text: `${expenses.length} records`, classes: 'text-rose-700 bg-rose-50 border-rose-100' },
+        { text: `${expensesCount} records`, classes: 'text-rose-700 bg-rose-50 border-rose-100' },
         { text: `₹${totalExpenses.toLocaleString()} spent`, classes: 'text-orange-700 bg-orange-50 border-orange-100' },
       ],
       show: true,
@@ -93,7 +88,7 @@ export function Dashboard() {
       path: '/devotees',
       image: '/Devotees.jpeg',
       stats: [
-        { text: `${devotees.length} registered`, classes: 'text-indigo-700 bg-indigo-50 border-indigo-100' },
+        { text: `${devoteesCount} registered`, classes: 'text-indigo-700 bg-indigo-50 border-indigo-100' },
       ],
       show: !isVolunteer,
     },
@@ -115,6 +110,26 @@ export function Dashboard() {
       icon: CreditCard,
       stats: [
         { text: 'View all records', classes: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+      ],
+      show: !isVolunteer,
+    },
+    {
+      id: 'qr-portal',
+      label: 'QR Portal',
+      path: '/admin/qr-portal-settings',
+      image: '/qr-portal-card.jpg',
+      stats: [
+        { text: 'Access public services', classes: 'text-fuchsia-700 bg-fuchsia-50 border-fuchsia-100' },
+      ],
+      show: appUser?.role === 'superadmin',
+    },
+    {
+      id: 'spl-records',
+      label: 'SPL History',
+      path: '/spl-records',
+      image: '/spl-records-card.jpg',
+      stats: [
+        { text: 'Track SPL records', classes: 'text-purple-700 bg-purple-50 border-purple-100' },
       ],
       show: !isVolunteer,
     }
@@ -174,7 +189,7 @@ export function Dashboard() {
                   ₹{myTodayCollection.toLocaleString()}
                 </p>
                 <p className="text-[10px] text-white/90 font-bold mt-1 tracking-wide">
-                  From {devotees.filter(d => d.volunteerId === appUser?.uid && new Date(d.createdAt).toDateString() === new Date().toDateString()).length} entries
+                  From {myDevoteesCount} entries
                 </p>
               </div>
             </div>
@@ -204,7 +219,7 @@ export function Dashboard() {
                   <span className="text-[10px] font-black text-white/90 uppercase tracking-widest bg-white/20 px-2 py-1 rounded-full border border-white/20">Collected</span>
                 </div>
                 <p className="text-2xl font-black text-white tracking-tight drop-shadow-md">
-                  {initialized.devotees ? `₹${totalCollected.toLocaleString()}` : '...'}
+                  {!isLoading ? `₹${totalCollected.toLocaleString()}` : '...'}
                 </p>
                 <p className="text-xs text-emerald-50 font-medium mt-1">Total Chanda Paid</p>
               </div>
@@ -222,7 +237,7 @@ export function Dashboard() {
                   <span className="text-[10px] font-black text-white/90 uppercase tracking-widest bg-white/20 px-2 py-1 rounded-full border border-white/20">Pending</span>
                 </div>
                 <p className="text-2xl font-black text-white tracking-tight drop-shadow-md">
-                  {initialized.devotees ? `₹${totalPending.toLocaleString()}` : '...'}
+                  {!isLoading ? `₹${totalPending.toLocaleString()}` : '...'}
                 </p>
                 <p className="text-xs text-orange-50 font-bold mt-1">Awaiting Payment</p>
               </div>
@@ -240,7 +255,7 @@ export function Dashboard() {
                   <span className="text-[10px] font-black text-white/90 uppercase tracking-widest bg-white/20 border border-white/30 px-2 py-1 rounded-full">Devotees</span>
                 </div>
                 <p className="text-2xl font-black text-white tracking-tight drop-shadow-sm">
-                  {initialized.devotees ? devotees.length : '...'}
+                  {!isLoading ? devoteesCount : '...'}
                 </p>
                 <p className="text-xs text-indigo-100 font-medium mt-1">Registered</p>
               </div>
@@ -259,7 +274,7 @@ export function Dashboard() {
                   <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest bg-white/30 backdrop-blur-xl px-2 py-1 rounded-full border border-white/50 shadow-sm">Today</span>
                 </div>
                 <p className="text-2xl font-black text-gray-900 tracking-tight drop-shadow-sm">
-                  {initialized.devotees ? `₹${todayCollection.toLocaleString()}` : '...'}
+                  {!isLoading ? `₹${todayCollection.toLocaleString()}` : '...'}
                 </p>
                 <p className="text-xs text-gray-700 font-bold mt-1 tracking-wide">Collected Today</p>
               </div>

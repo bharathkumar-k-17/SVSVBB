@@ -1,62 +1,75 @@
 import type { ReactNode } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
-import { signOut } from 'firebase/auth';
+import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { auth } from '../lib/firebase';
+import { useAppSettings } from '../hooks/queries';
 
 type ProtectedRouteProps = {
-  allowedRoles?: Array<'super_admin' | 'admin' | 'volunteer'>;
+  allowedRoles?: Array<'superadmin' | 'admin' | 'volunteer'>;
   children?: ReactNode;
 };
 
 export const ProtectedRoute = ({ allowedRoles, children }: ProtectedRouteProps) => {
-  const { user, appUser, loading } = useAuthStore();
+  const { supabaseUser, appUser, loading } = useAuthStore();
+  const { data: settings, isLoading: checkingSystem } = useAppSettings();
 
-  if (loading) {
+  const systemAccess = settings?.system_access ?? true;
+
+  // ── Loading State ──
+  if (loading || checkingSystem) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-orange-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 border-4 border-orange-400 border-t-transparent rounded-full animate-spin" />
-          <p className="text-orange-600 font-semibold text-lg">Loading festival workspace...</p>
-        </div>
+      <div className="flex min-h-screen bg-gray-50 items-center justify-center">
+        {/* Minimal blank shell for auth initialization */}
       </div>
     );
   }
 
-  if (!user) {
+  // ── Not Logged In ──
+  if (!supabaseUser) {
     return <Navigate to="/login" replace />;
   }
 
-  // If user is logged in but not yet fetched from Firestore — show loader briefly
+  // ── Profile Not Loaded ──
   if (!appUser) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-orange-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 border-4 border-orange-400 border-t-transparent rounded-full animate-spin" />
-          <p className="text-orange-600 font-semibold text-lg">Verifying account...</p>
-        </div>
+      <div className="flex min-h-screen bg-gray-50 items-center justify-center">
+        {/* Minimal blank shell for auth verification */}
       </div>
     );
   }
 
-  // Block non-approved accounts
+  // ── Pending / Rejected ──
   if (appUser.status !== 'approved') {
     const isRejected = appUser.status === 'rejected';
     return (
-      <div className="flex min-h-screen items-center justify-center bg-orange-50 p-6">
-        <div className={`bg-white rounded-2xl shadow-lg p-8 max-w-md text-center border ${isRejected ? 'border-red-200' : 'border-orange-200'}`}>
-          <div className="text-5xl mb-4">{isRejected ? '❌' : '🙏'}</div>
+      <div className="flex min-h-screen items-center justify-center p-6" style={{ background: 'linear-gradient(135deg, #FFF7ED, #FFFBEB)' }}>
+        <div
+          className={`bg-white rounded-2xl shadow-xl p-8 max-w-md text-center border-2 ${
+            isRejected ? 'border-red-200' : 'border-amber-200'
+          }`}
+          style={{ animation: 'card-enter 0.4s ease-out' }}
+        >
+          <div className="text-6xl mb-4">{isRejected ? '❌' : '🙏'}</div>
           <h2 className="text-xl font-bold text-gray-800 mb-2">
-            {isRejected ? 'Account Rejected' : 'Account Pending Approval'}
+            {isRejected ? 'Account Rejected' : 'Pending Approval'}
           </h2>
-          <p className="text-gray-500 text-sm">
-            {isRejected 
-              ? 'Your account access has been rejected. Please contact the administrator.'
-              : 'Your account is pending admin approval. Please contact the administrator.'}
+          <p className="text-gray-500 text-sm leading-relaxed mb-1">
+            {isRejected
+              ? 'Your account access has been rejected by the Superadmin.'
+              : 'Your account is awaiting Superadmin approval.'}
+          </p>
+          <p className="text-gray-400 text-xs mb-6">
+            {isRejected
+              ? 'Please contact the administrator if you believe this is an error.'
+              : 'You will be notified once your account is approved. Please check back later.'}
           </p>
           <button
-            onClick={() => { signOut(auth); }}
-            className={`mt-6 px-6 py-2 ${isRejected ? 'bg-red-500 hover:bg-red-600' : 'bg-orange-500 hover:bg-orange-600'} text-white rounded-xl font-semibold transition-colors`}
+            onClick={() => supabase.auth.signOut()}
+            className={`px-8 py-2.5 ${
+              isRejected
+                ? 'bg-red-500 hover:bg-red-600'
+                : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700'
+            } text-white rounded-xl font-bold transition-all shadow-md`}
           >
             Sign Out
           </button>
@@ -65,6 +78,25 @@ export const ProtectedRoute = ({ allowedRoles, children }: ProtectedRouteProps) 
     );
   }
 
+  // ── System Access Check ──
+  if (systemAccess === false && appUser.role !== 'superadmin') {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6" style={{ background: 'linear-gradient(135deg, #FFF7ED, #FFFBEB)' }}>
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md text-center border-2 border-orange-200">
+          <div className="text-6xl mb-4">🔒</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">System Maintenance</h2>
+          <p className="text-gray-500 text-sm leading-relaxed mb-6">
+            System access is currently disabled for volunteers and admins. Please try again later.
+          </p>
+          <button onClick={() => supabase.auth.signOut()} className="px-8 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold transition-all shadow-md">
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Role Check ──
   if (allowedRoles?.length && !allowedRoles.includes(appUser.role)) {
     return <Navigate to="/dashboard" replace />;
   }

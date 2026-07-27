@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface Devotee {
   id: string;
@@ -73,128 +73,99 @@ export interface SPLRecord {
   year: number;
 }
 
+// ─── Map snake_case DB rows → camelCase app types ─────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapDevotee = (row: any): Devotee => ({
+  id: row.id,
+  name: row.name ?? '',
+  phone: row.phone ?? '',
+  totalAmount: row.total_amount ?? 0,
+  paidAmount: row.paid_amount ?? 0,
+  pendingAmount: row.pending_amount ?? 0,
+  donationItem: row.donation_item,
+  paymentMode: row.payment_mode ?? 'Cash',
+  paymentStatus: row.payment_status ?? 'UNPAID',
+  gotram: row.gotram,
+  familyMembers: row.family_members ?? [],
+  year: row.year ?? new Date().getFullYear(),
+  volunteerId: row.volunteer_id ?? '',
+  volunteerName: row.volunteer_name ?? '',
+  createdAt: row.created_at ?? Date.now(),
+  receiptNo: row.receipt_no ?? '',
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapExpense = (row: any): Expense => ({
+  id: row.id,
+  description: row.description ?? '',
+  amount: row.amount ?? 0,
+  category: row.category ?? '',
+  date: row.date ?? Date.now(),
+  year: row.year ?? new Date().getFullYear(),
+  volunteerId: row.volunteer_id,
+  volunteerName: row.volunteer_name,
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapCultural = (row: any): CulturalEvent => ({
+  id: row.id,
+  gameName: row.game_name ?? '',
+  category: row.category ?? '',
+  winner1: row.winner1 ?? '',
+  winner2: row.winner2 ?? '',
+  year: row.year ?? new Date().getFullYear(),
+  addedBy: row.added_by,
+  addedByName: row.added_by_name,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapVipGotram = (row: any): VIPGotram => ({
+  id: row.id,
+  gotram: row.gotram ?? '',
+  familyMembers: row.family_members ?? [],
+  order: row.order ?? 0,
+  source: row.source ?? 'Manual',
+  devoteeId: row.devotee_id,
+  year: row.year ?? new Date().getFullYear(),
+  createdAt: row.created_at,
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapSplRecord = (row: any): SPLRecord => ({
+  id: row.id,
+  description: row.description ?? '',
+  amount: row.amount ?? 0,
+  date: row.date ?? Date.now(),
+  year: row.year ?? new Date().getFullYear(),
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mapPaymentHistory = (row: any): PaymentHistory => ({
+  id: row.id,
+  devoteeId: row.devotee_id ?? '',
+  amount: row.amount ?? 0,
+  mode: row.mode ?? 'Cash',
+  date: row.date ?? Date.now(),
+  volunteerId: row.volunteer_id ?? '',
+});
+
+// ─── Store ────────────────────────────────────────────────────────────────────
+
 interface AppState {
   currentYear: number;
-  devotees: Devotee[];
-  expenses: Expense[];
-  culturalEvents: CulturalEvent[];
-  vipGotrams: VIPGotram[];
-  splRecords: SPLRecord[];
-  paymentHistories: Record<string, PaymentHistory[]>;
   loading: boolean;
-  initialized: {
-    devotees: boolean;
-    expenses: boolean;
-    cultural: boolean;
-    vipGotrams: boolean;
-    splRecords: boolean;
-  };
   setYear: (year: number) => void;
-  // Subscribers
-  subscribeToDevotees: () => () => void;
-  subscribeToExpenses: () => () => void;
-  subscribeToCultural: () => () => void;
-  subscribeToVIPGotrams: () => () => void;
-  subscribeToSPLRecords: () => () => void;
-  subscribeToPaymentHistory: (devoteeId: string) => () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   currentYear: new Date().getFullYear(),
-  devotees: [],
-  expenses: [],
-  culturalEvents: [],
-  vipGotrams: [],
-  splRecords: [],
-  paymentHistories: {},
   loading: false,
-  initialized: {
-    devotees: false,
-    expenses: false,
-    cultural: false,
-    vipGotrams: false,
-    splRecords: false,
-  },
-  setYear: (year) => set({ 
-    currentYear: year,
-    initialized: {
-      devotees: false,
-      expenses: false,
-      cultural: false,
-      vipGotrams: false,
-      splRecords: false,
-    }
-  }),
 
-  subscribeToDevotees: () => {
-    const q = query(collection(db, 'devotees'), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, (snapshot) => {
-      const year = get().currentYear;
-      const devs = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as Devotee))
-        .filter(d => d.year === year);
-      set((state) => ({ devotees: devs, initialized: { ...state.initialized, devotees: true } }));
-    });
-  },
-
-  subscribeToExpenses: () => {
-    const q = query(collection(db, 'expenses'), orderBy('date', 'desc'));
-    return onSnapshot(q, (snapshot) => {
-      const year = get().currentYear;
-      const exp = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as Expense))
-        .filter(e => e.year === year);
-      set((state) => ({ expenses: exp, initialized: { ...state.initialized, expenses: true } }));
-    });
-  },
-
-  subscribeToCultural: () => {
-    const q = query(collection(db, 'culturalEvents'));
-    return onSnapshot(q, (snapshot) => {
-      const year = get().currentYear;
-      const events = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as CulturalEvent))
-        .filter(e => e.year === year);
-      set((state) => ({ culturalEvents: events, initialized: { ...state.initialized, cultural: true } }));
-    });
-  },
-
-  subscribeToVIPGotrams: () => {
-    const q = query(collection(db, 'vipGotrams'));
-    return onSnapshot(q, (snapshot) => {
-      const year = get().currentYear;
-      const gotrams = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as VIPGotram))
-        .filter(g => g.year === year)
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-      set((state) => ({ vipGotrams: gotrams, initialized: { ...state.initialized, vipGotrams: true } }));
-    });
-  },
-
-  subscribeToSPLRecords: () => {
-    const q = query(collection(db, 'spl_records'), orderBy('date', 'desc'));
-    return onSnapshot(q, (snapshot) => {
-      const year = get().currentYear;
-      const records = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as SPLRecord))
-        .filter(r => r.year === year);
-      set((state) => ({ splRecords: records, initialized: { ...state.initialized, splRecords: true } }));
-    });
-  },
-
-  subscribeToPaymentHistory: (devoteeId: string) => {
-    const q = query(collection(db, 'payments'), where('devoteeId', '==', devoteeId));
-    return onSnapshot(q, (snapshot) => {
-      // Sort manually locally to avoid missing index
-      const history = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as PaymentHistory))
-        .sort((a, b) => b.date - a.date);
-      set((state) => ({
-        paymentHistories: {
-          ...state.paymentHistories,
-          [devoteeId]: history
-        }
-      }));
-    });
-  }
+  setYear: (year) =>
+    set({
+      currentYear: year,
+    }),
 }));

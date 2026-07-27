@@ -1,5 +1,3 @@
-import { Timestamp } from 'firebase/firestore';
-
 export type PoojaSlotStatus = 'available' | 'booked';
 export type PoojaTime = 'morning' | 'evening';
 
@@ -8,7 +6,8 @@ export interface PoojaFamilyBooking {
   name: string;
   phone: string;
   status: 'active' | 'cancelled';
-  booked_at: Timestamp;
+  booked_at: Date | { toMillis: () => number } | any;
+
 }
 
 export interface PoojaSlot {

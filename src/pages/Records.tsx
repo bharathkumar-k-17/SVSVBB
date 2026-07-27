@@ -2,12 +2,12 @@ import { useEffect, useState, useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { format } from 'date-fns';
 import { BellRing, BookOpen, CalendarCheck2, MessageCircle } from 'lucide-react';
-import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { useAppStore } from '../store/appStore';
 import { A4ExportSystem } from '../components/A4ExportSystem';
-import { db } from '../lib/firebase';
 import { buildWhatsAppUrl, maskPhoneNumber } from '../lib/privacy';
 import type { PoojaSlot } from '../types/pooja';
+import { supabase } from '../lib/supabase';
+import { useRecordsData } from '../hooks/queries';
 
 type RecordTab = 'devotees' | 'vip' | 'expenses' | 'cultural' | 'volunteer' | 'pooja';
 
@@ -56,27 +56,18 @@ function renderGridEmptyRow(columnCount: number, absoluteIndex: number) {
 }
 
 export function Records() {
-  const { currentYear, devotees, expenses, culturalEvents, vipGotrams } = useAppStore();
+  const { currentYear } = useAppStore();
   const [activeTab, setActiveTab] = useState<RecordTab>('devotees');
   const [sortBy, setSortBy] = useState<'latest' | 'amount' | 'name-asc' | 'name-desc'>('latest');
-  const [poojaBookings, setPoojaBookings] = useState<PoojaSlot[]>([]);
-  const [festivalStartDate, setFestivalStartDate] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchConfig = async () => {
-      const { getDoc, doc } = await import('firebase/firestore');
-      const snap = await getDoc(doc(db, 'settings', 'app'));
-      if (snap.exists()) setFestivalStartDate(snap.data().festivalStartDate);
-    };
-    fetchConfig();
-
-    return onSnapshot(collection(db, 'pooja_slots'), (snapshot) => {
-      const slots = snapshot.docs
-        .map((item) => ({ id: item.id, ...item.data() }) as PoojaSlot)
-        .sort((a, b) => a.day - b.day || a.time.localeCompare(b.time));
-      setPoojaBookings(slots);
-    });
-  }, []);
+  
+  const { data: recordsData } = useRecordsData(currentYear);
+  
+  const devotees = recordsData?.devotees || [];
+  const expenses = recordsData?.expenses || [];
+  const culturalEvents = recordsData?.culturalEvents || [];
+  const vipGotrams = recordsData?.vipGotrams || [];
+  const poojaBookings = recordsData?.poojaBookings || [];
+  const festivalStartDate = recordsData?.festivalStartDate || null;
 
   const sortedDevotees = useMemo(() => {
     const list = [...devotees];
@@ -195,7 +186,7 @@ export function Records() {
       case 'pooja':
         return {
           title: 'Pooja Bookings',
-          data: poojaBookings.flatMap(slot => (slot.families || []).filter(f => f.status === 'active').map(family => ({
+          data: poojaBookings.flatMap(slot => (slot.families || []).filter((f: any) => f.status === 'active').map((family: any) => ({
             ...family,
             dateStr: (() => {
               if (!festivalStartDate) return '-';
@@ -215,19 +206,17 @@ export function Records() {
   }, [activeTab, devotees, vipGotrams, expenses, culturalEvents, volunteersArray, totalDevoteeAmount, totalPaidAmount, totalPendingAmount, totalExpenseAmount, poojaBookings]);
 
   const handlePaymentReminder = async (devotee: any) => {
-    await updateDoc(doc(db, 'devotees', devotee.id), {
+    await supabase.from('devotees').update({
       triggerReminder: Date.now(),
       reminderType: devotee.paymentStatus,
-    });
-    const msg = `SVSVBB ${devotee.paymentStatus} reminder\nName: ${devotee.name}\nPending: ${formatCurrency(devotee.pendingAmount || 0)}`;
+    }).eq('id', devotee.id);
+    const msg = `SVSVBB Chanda Reminder\nDear ${devotee.name},\nPending Amount: ₹${devotee.pendingAmount}\nReceipt No: ${devotee.receiptNo || 'Pending'}`;
     window.open(buildWhatsAppUrl(devotee.phone, msg), '_blank');
   };
 
-  const handlePoojaReminder = async (slot: PoojaSlot) => {
-    await updateDoc(doc(db, 'pooja_slots', slot.id), {
-      reminderRequestedAt: Date.now(),
-    });
-    const activeFamily = (slot.families || []).find(f => f.status === 'active');
+  const sendReminder = async (slot: any) => {
+    await supabase.from('pooja_slots').update({ reminderRequestedAt: Date.now() }).eq('id', slot.id);
+    const activeFamily = (slot.families || []).find((f: any) => f.status === 'active');
     const familyName = activeFamily?.name || '-';
     const familyPhone = activeFamily?.phone || '';
     const msg = `SVSVBB Pooja Booking Reminder\nFamily: ${familyName}\nSlot: Day ${slot.day} ${slot.time}`;
@@ -533,7 +522,7 @@ export function Records() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-300">
-                {poojaBookings.flatMap(slot => (slot.families || []).filter(f => f.status === 'active').map(family => ({
+                {poojaBookings.flatMap(slot => (slot.families || []).filter((f: any) => f.status === 'active').map((family: any) => ({
                   ...family,
                   slotDay: slot.day,
                   slotTime: slot.time,

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { updateDoc, doc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
 import { Save, X } from 'lucide-react';
 import { MaskedPhoneInput } from './MaskedPhoneInput';
 import { normalizePhoneDigits } from '../lib/privacy';
@@ -23,20 +22,25 @@ export function EditDevoteeModal({ devotee, onClose }: { devotee: any, onClose: 
       const pending = Number(formData.totalAmount) - Number(formData.paidAmount);
       const status = pending <= 0 ? 'PAID' : (Number(formData.paidAmount) > 0 ? 'PARTIAL' : 'UNPAID');
 
-      await updateDoc(doc(db, 'devotees', devotee.id), {
-        name: formData.name,
-        phone: normalizePhoneDigits(formData.phone),
-        totalAmount: Number(formData.totalAmount),
-        paidAmount: Number(formData.paidAmount),
-        pendingAmount: pending <= 0 ? 0 : pending,
-        donationItem: formData.donationItem,
-        gotram: formData.gotram,
-        paymentStatus: status
-      });
+      const { error } = await supabase
+        .from('devotees')
+        .update({
+          name: formData.name,
+          phone: normalizePhoneDigits(formData.phone),
+          total_amount: Number(formData.totalAmount),
+          paid_amount: Number(formData.paidAmount),
+          pending_amount: pending <= 0 ? 0 : pending,
+          donation_item: formData.donationItem,
+          gotram: formData.gotram,
+          payment_status: status,
+        })
+        .eq('id', devotee.id);
+
+      if (error) throw error;
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to update devotee');
+      alert(`Failed to update devotee: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }

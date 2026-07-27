@@ -11,11 +11,13 @@ import { PoojaSlot, PoojaBookingData, PoojaFamilyBooking } from '../types/pooja'
 import SlotCard from '../components/pooja/SlotCard';
 import BookingModal from '../components/pooja/BookingModal';
 import { useAuthStore } from '../store/authStore';
+import { useAppStore } from '../store/appStore';
 import { toast } from 'react-hot-toast';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { buildWhatsAppUrl, maskPhoneNumber } from '../lib/privacy';
+import { supabase } from '../lib/supabase';
 import { Calendar, CalendarDays, Plus, Settings2 } from 'lucide-react';
+
+const SLOTS_PER_DAY = 18;
 
 const PoojaBooking: React.FC = () => {
   const [slots, setSlots] = useState<PoojaSlot[]>([]);
@@ -24,8 +26,9 @@ const PoojaBooking: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [festivalStartDate, setFestivalStartDate] = useState<string | null>(null);
   const { appUser } = useAuthStore();
+  const currentYear = useAppStore(state => state.currentYear);
 
-  const isSuperAdmin = appUser?.role === 'super_admin';
+  const isSuperAdmin = appUser?.role === 'superadmin';
   const isAdmin = appUser?.role === 'admin' || isSuperAdmin;
 
   useEffect(() => {
@@ -35,7 +38,7 @@ const PoojaBooking: React.FC = () => {
     };
     fetchConfig();
 
-    const unsubscribe = subscribeToSlots((updatedSlots) => {
+    const unsubscribe = subscribeToSlots(currentYear, (updatedSlots) => {
       setSlots(updatedSlots);
       setLoading(false);
     });
@@ -61,7 +64,7 @@ const PoojaBooking: React.FC = () => {
 
   const handleBook = async (slotId: string, data: PoojaBookingData) => {
     setIsSubmitting(true);
-    const result = await bookPoojaSlot(slotId, data);
+    const result = await bookPoojaSlot(slotId, data, currentYear);
     setIsSubmitting(false);
     
     if (result.success) {
@@ -107,11 +110,11 @@ const PoojaBooking: React.FC = () => {
   const handleReminderFamily = async (slot: PoojaSlot, family: PoojaFamilyBooking) => {
     if (!family || family.status !== 'active') return;
 
-    // Track reminder in Firestore
-    await updateDoc(doc(db, 'pooja_slots', slot.id), {
-      lastReminderSentAt: Date.now(),
-      lastReminderTo: family.name,
-    });
+    // Track reminder in Supabase
+    await supabase.from('pooja_slots').update({
+      last_reminder_sent_at: new Date().toISOString(),
+      last_reminder_to: family.name,
+    }).eq('id', slot.id);
 
     const dateStr = calculateDateStr(slot.day);
     const message = `*SVSVBB Pooja Reminder*\n\n🙏 Namaste ${family.name} garu,\n\nThis is a reminder for your Pooja tomorrow!\n📅 *Date:* ${dateStr}\n⏰ *Time:* ${slot.time === 'morning' ? '08:00 AM' : '06:00 PM'}\n\n_See you at the Mandapam!_`;

@@ -1,14 +1,14 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
-import { Search, Filter, Trash2, Edit, Plus, Crown, MessageCircle, MessageSquare, ArrowUpDown, History, Play, BellRing } from 'lucide-react';
+import { useDevotees } from '../hooks/queries';
+import { useDebounce } from '../hooks/useDebounce';
+import { Search, Filter, Trash2, Edit, Plus, Crown, MessageCircle, MessageSquare, ArrowUpDown, BellRing, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PaymentModal } from '../components/PaymentModal';
 import { EditDevoteeModal } from '../components/EditDevoteeModal';
-import { ReceiptModal } from '../components/ReceiptModal';
-import { deleteDoc, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { maskPhoneNumber } from '../lib/privacy';
-import { format } from 'date-fns';
+import { supabase } from '../lib/supabase';
+import { maskPhoneNumber, getWhatsAppNumber } from '../lib/privacy';
+import { Skeleton } from '../components/ui/Skeleton';
 
 type SortOption = 'LATEST' | 'AMOUNT_DESC';
 
@@ -17,41 +17,52 @@ function formatCurrency(value: number) {
 }
 
 export function AllDevotees() {
-  const { devotees, currentYear, initialized } = useAppStore();
+  const { currentYear } = useAppStore();
   const { appUser } = useAuthStore();
-  const [search, setSearch] = useState('');
+  
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearch = useDebounce(searchInput, 300);
+  
   const [filter, setFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState<SortOption>('LATEST');
+  const [page, setPage] = useState(0);
+  const pageSize = 20;
+
   const [selectedDevotee, setSelectedDevotee] = useState<any>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
   
-  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'super_admin';
+  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
   const isVolunteer = appUser?.role === 'volunteer';
 
-  const filteredAndSortedDevotees = useMemo(() => {
-    let result = devotees.filter(dev => {
-      const matchesSearch = (dev.name || '').toLowerCase().includes(search.toLowerCase()) || 
-                            (dev.phone || '').includes(search) ||
-                            (dev.receiptNo || '').toLowerCase().includes(search.toLowerCase());
-      
-      if (!matchesSearch) return false;
+  const { data: devoteesData, isLoading, refetch } = useDevotees(
+    currentYear,
+    page,
+    pageSize,
+    debouncedSearch,
+    filter,
+    sortBy
+  );
 
-      if (filter === 'VIP') return dev.totalAmount >= 1000;
-      if (filter !== 'ALL') return dev.paymentStatus === filter;
-      return true;
-    });
+  const devotees = devoteesData?.data || [];
+  const totalCount = devoteesData?.count || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
 
-    // Sorting Logic
-    if (sortBy === 'LATEST') {
-      result.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    } else if (sortBy === 'AMOUNT_DESC') {
-      result.sort((a, b) => (b.totalAmount || 0) - (a.totalAmount || 0));
-    }
+  // Reset page when filters change
+  const handleFilterChange = (f: string) => {
+    setFilter(f);
+    setPage(0);
+  };
 
-    return result;
-  }, [devotees, search, filter, sortBy]);
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(e.target.value);
+    setPage(0);
+  };
+
+  const handleSortChange = (s: SortOption) => {
+    setSortBy(s);
+    setPage(0);
+  };
 
   const handleAddPayment = (dev: any) => {
     setSelectedDevotee(dev);
@@ -66,17 +77,44 @@ export function AllDevotees() {
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this devotee record?')) {
       try {
-        await deleteDoc(doc(db, 'devotees', id));
-      } catch (err) {
+        const { error } = await supabase
+          .from('devotees')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+      } catch (err: any) {
         console.error(err);
-        alert('Failed to delete devotee record.');
+        alert(`Failed to delete devotee record: ${err.message || 'Unknown error'}`);
       }
     }
   };
 
   const handleWhatsAppShare = (dev: any) => {
-    setSelectedDevotee(dev);
-    setShowReceiptModal(true);
+    try {
+      const targetPhone = getWhatsAppNumber(dev.phone);
+      
+      if (!targetPhone) {
+        alert("Invalid or missing phone number for WhatsApp sharing.");
+        return;
+      }
+
+      const baseUrl = window.location.origin;
+      const receiptUrl = `${baseUrl}/portal/receipt/${dev.id}`;
+      
+      const paymentMsg = dev.paymentMode === 'UPI' && dev.paidAmount === 0 
+        ? 'మీ చందా నమోదు చేయబడింది.' 
+        : 'మీ చందా విజయవంతంగా నమోదు చేయబడింది.';
+        
+      const text = `🙏 నమస్కారం 🙏\n\nశ్రీ వరసిద్ధి వినాయక భక్త బృందం\n\n${paymentMsg}\n\nపేరు: ${dev.name}\nరసీదు నం: ${dev.receiptNo}\nమొత్తం: ₹${dev.totalAmount}\nచెల్లింపు విధానం: ${dev.paymentMode || 'Cash'}\n\nరసీదు చూడటానికి / డౌన్లోడ్ చేసుకోవడానికి:\n${receiptUrl}\n\n🙏 ధన్యవాదాలు 🙏`;
+
+      const waLink = `https://wa.me/${targetPhone}?text=${encodeURIComponent(text)}`;
+      console.log('Target Phone:', targetPhone, 'WA Link:', waLink);
+      window.open(waLink, '_blank');
+      
+    } catch (e) {
+      console.error("WhatsApp share error:", e);
+    }
   };
 
   const handleSMSShare = (dev: any) => {
@@ -91,13 +129,16 @@ export function AllDevotees() {
   const handleSendReminder = async (dev: any) => {
     if (window.confirm(`Send payment reminder SMS to ${dev.name}?`)) {
       try {
-        await updateDoc(doc(db, 'devotees', dev.id), {
-          triggerReminder: Date.now() // This field triggers the Cloud Function
-        });
+        const { error } = await supabase
+          .from('devotees')
+          .update({ trigger_reminder: Date.now() })
+          .eq('id', dev.id);
+
+        if (error) throw error;
         alert('Reminder SMS triggered successfully!');
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to trigger reminder:', err);
-        alert('Failed to send reminder. Please check your connection.');
+        alert(`Failed to send reminder: ${err.message || 'Please check your connection.'}`);
       }
     }
   };
@@ -116,7 +157,7 @@ export function AllDevotees() {
             {['ALL', 'PAID', 'PARTIAL', 'UNPAID', 'VIP'].map(f => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => handleFilterChange(f)}
               className={`flex-1 sm:flex-none px-4 py-2 font-medium transition-colors ${
                 filter === f 
                   ? 'bg-primary text-white' 
@@ -140,8 +181,8 @@ export function AllDevotees() {
               <input
                 type="text"
                 placeholder=""
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={handleSearchChange}
                 className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary shadow-sm outline-none text-sm transition-all"
               />
             </div>
@@ -152,7 +193,7 @@ export function AllDevotees() {
               </div>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortOption)}
+                onChange={(e) => handleSortChange(e.target.value as SortOption)}
                 className="pl-9 pr-8 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary shadow-sm outline-none text-sm appearance-none bg-white font-medium text-gray-700 cursor-pointer"
               >
                 <option value="LATEST">Sort By: Latest</option>
@@ -167,7 +208,7 @@ export function AllDevotees() {
           </div>
 
           <div className="text-sm text-gray-500 font-semibold bg-gray-100 px-3 py-1 rounded-full whitespace-nowrap">
-            {filteredAndSortedDevotees.length} Devotees
+            {totalCount} Devotees
           </div>
         </div>
 
@@ -185,7 +226,7 @@ export function AllDevotees() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
-              {filteredAndSortedDevotees.map((dev) => (
+              {devotees.map((dev) => (
                 <tr 
                   key={dev.id} 
                   className="hover:bg-orange-50/40 transition-all group"
@@ -236,17 +277,26 @@ export function AllDevotees() {
                             )}
                           
                             {dev.pendingAmount > 0 && (
-                              <button onClick={() => handleAddPayment(dev)} className="text-white hover:text-white bg-primary hover:bg-orange-700 py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md hover:-translate-y-0.5" title="Collect Payment">
+                              <button onClick={() => {
+                                handleAddPayment(dev);
+                                refetch();
+                              }} className="text-white hover:text-white bg-primary hover:bg-orange-700 py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md hover:-translate-y-0.5" title="Collect Payment">
                                 <Plus size={16} /> <span className="text-xs font-bold whitespace-nowrap">Collect</span>
                               </button>
                             )}
                             
                             {isAdmin && (
                               <div className="flex gap-1">
-                                <button onClick={() => handleEditDevotee(dev)} className="text-gray-500 hover:text-indigo-600 bg-gray-100 hover:bg-indigo-50 p-2 rounded-xl transition-all" title="Edit">
+                                <button onClick={() => {
+                                  handleEditDevotee(dev);
+                                  refetch();
+                                }} className="text-gray-500 hover:text-indigo-600 bg-gray-100 hover:bg-indigo-50 p-2 rounded-xl transition-all" title="Edit">
                                   <Edit size={18} />
                                 </button>
-                                <button onClick={() => handleDelete(dev.id)} className="text-gray-500 hover:text-red-600 bg-gray-100 hover:bg-red-50 p-2 rounded-xl transition-all" title="Delete">
+                                <button onClick={async () => {
+                                  await handleDelete(dev.id);
+                                  refetch();
+                                }} className="text-gray-500 hover:text-red-600 bg-gray-100 hover:bg-red-50 p-2 rounded-xl transition-all" title="Delete">
                                   <Trash2 size={18} />
                                 </button>
                               </div>
@@ -256,18 +306,7 @@ export function AllDevotees() {
                     )}
                   </tr>
               ))}
-              {!initialized.devotees && filteredAndSortedDevotees.length === 0 && (
-                <tr>
-                  <td colSpan={isVolunteer ? 6 : 7} className="px-6 py-20 text-center text-gray-500">
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="h-10 w-10 rounded-full border-4 border-orange-200 border-t-primary animate-spin mb-4"></div>
-                      <p className="text-xl font-bold text-gray-900">Loading Devotees...</p>
-                      <p className="text-sm">Fetching real-time data from temple records</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {initialized.devotees && filteredAndSortedDevotees.length === 0 && (
+              {devotees.length === 0 && (
                 <tr>
                   <td colSpan={isVolunteer ? 6 : 7} className="px-6 py-20 text-center text-gray-500">
                     <div className="flex flex-col items-center justify-center">
@@ -276,9 +315,9 @@ export function AllDevotees() {
                       </div>
                       <p className="text-xl font-bold text-gray-900">No devotees found</p>
                       <p className="text-sm max-w-xs mx-auto">We couldn't find any records matching your search or filter criteria. Try broadening your query.</p>
-                      {(search || filter !== 'ALL') && (
+                      {(searchInput || filter !== 'ALL') && (
                         <button 
-                          onClick={() => { setSearch(''); setFilter('ALL'); }}
+                          onClick={() => { setSearchInput(''); setFilter('ALL'); }}
                           className="mt-6 text-primary font-bold hover:underline"
                         >
                           Clear all filters
@@ -291,6 +330,31 @@ export function AllDevotees() {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+             <div className="text-sm text-gray-600">
+               Showing {page * pageSize + 1} to {Math.min((page + 1) * pageSize, totalCount)} of {totalCount} entries
+             </div>
+             <div className="flex gap-2">
+               <button
+                 onClick={() => setPage(p => Math.max(0, p - 1))}
+                 disabled={page === 0}
+                 className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+               >
+                 <ChevronLeft className="h-4 w-4" />
+               </button>
+               <button
+                 onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                 disabled={page >= totalPages - 1}
+                 className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+               >
+                 <ChevronRight className="h-4 w-4" />
+               </button>
+             </div>
+          </div>
+        )}
       </div>
 
       {showPaymentModal && selectedDevotee && (
@@ -298,9 +362,6 @@ export function AllDevotees() {
       )}
       {showEditModal && selectedDevotee && (
         <EditDevoteeModal devotee={selectedDevotee} onClose={() => setShowEditModal(false)} />
-      )}
-      {showReceiptModal && selectedDevotee && (
-        <ReceiptModal devotee={selectedDevotee} currentYear={currentYear} onClose={() => setShowReceiptModal(false)} />
       )}
     </div>
   );

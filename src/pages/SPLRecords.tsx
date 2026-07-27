@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
-import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
-import { addDoc, collection, doc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { useSPLRecords } from '../hooks/queries';
+import { supabase } from '../lib/supabase';
 import { ShieldAlert, Plus, Trash2, Edit } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { Skeleton } from '../components/ui/Skeleton';
 
 export function SPLRecords() {
-  const { splRecords, currentYear, subscribeToSPLRecords, initialized } = useAppStore();
   const { appUser } = useAuthStore();
   const navigate = useNavigate();
+  
+  const { data: splRecordsData, isLoading: queryLoading, refetch } = useSPLRecords();
+  const splRecords = splRecordsData || [];
 
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -20,60 +22,58 @@ export function SPLRecords() {
     date: format(new Date(), 'yyyy-MM-dd')
   });
 
-  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'super_admin';
+  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
 
   useEffect(() => {
     if (!isAdmin) {
       navigate('/dashboard');
       return;
     }
-    const unsub = subscribeToSPLRecords();
-    return () => unsub();
-  }, [isAdmin, currentYear]);
+  }, [isAdmin, navigate]);
 
   if (!isAdmin) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Optimistic UI updates
-    const currentData = { ...formData };
-    const currentEditingId = editingId;
-    
-    setFormData({
-      description: '',
-      amount: '',
-      date: format(new Date(), 'yyyy-MM-dd')
-    });
-    setEditingId(null);
+    setLoading(true);
 
     try {
-      if (currentEditingId) {
-        updateDoc(doc(db, 'spl_records', currentEditingId), {
-          description: currentData.description,
-          amount: Number(currentData.amount),
-          date: new Date(currentData.date).getTime()
-        }).catch(err => {
-           console.error(err); alert('Failed to update SPL record');
-           setFormData(currentData); setEditingId(currentEditingId);
-        });
+      if (editingId) {
+        const { error } = await supabase
+          .from('spl_records')
+          .update({
+            description: formData.description,
+            amount: Number(formData.amount) || 0,
+            date: new Date(formData.date).getTime(),
+          })
+          .eq('id', editingId);
+
+        if (error) throw error;
       } else {
-        addDoc(collection(db, 'spl_records'), {
-          description: currentData.description,
-          amount: Number(currentData.amount),
-          date: new Date(currentData.date).getTime(),
-          year: currentYear,
-          createdAt: Date.now()
-        }).catch(err => {
-           console.error(err); alert('Failed to save SPL record');
-           setFormData(currentData);
-        });
+        const { error } = await supabase
+          .from('spl_records')
+          .insert({
+            description: formData.description,
+            amount: Number(formData.amount) || 0,
+            date: new Date(formData.date).getTime(),
+            created_at: Date.now(),
+          });
+
+        if (error) throw error;
       }
-    } catch (err) {
+
+      setFormData({
+        description: '',
+        amount: '',
+        date: format(new Date(), 'yyyy-MM-dd')
+      });
+      setEditingId(null);
+      refetch();
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to save SPL record');
-      setFormData(currentData);
-      setEditingId(currentEditingId);
+      alert(`Failed to save SPL record: ${err.message || 'Unknown error'}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -81,7 +81,7 @@ export function SPLRecords() {
     setEditingId(rec.id);
     setFormData({
       description: rec.description,
-      amount: rec.amount.toString(),
+      amount: rec.amount ? rec.amount.toString() : '',
       date: format(new Date(rec.date), 'yyyy-MM-dd')
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -89,11 +89,22 @@ export function SPLRecords() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this SPL record permanently? (Admin Only)')) {
-      await deleteDoc(doc(db, 'spl_records', id));
+      try {
+        const { error } = await supabase
+          .from('spl_records')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+        refetch();
+      } catch (err: any) {
+        console.error(err);
+        alert(`Failed to delete SPL record: ${err.message || 'Unknown error'}`);
+      }
     }
   };
 
-  const totalSPL = splRecords.reduce((sum, rec) => sum + rec.amount, 0);
+  const totalSPL = splRecords.reduce((sum, rec) => sum + (rec.amount || 0), 0);
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -103,8 +114,8 @@ export function SPLRecords() {
             <ShieldAlert className="text-orange-600 h-8 w-8" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">SPL Records {currentYear}</h1>
-            <p className="text-gray-500 mt-1 font-semibold text-sm">Internal Admin Operations only.</p>
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">SPL Records</h1>
+            <p className="text-gray-500 mt-1 font-semibold text-sm">Permanent Admin Operations Register</p>
           </div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-orange-100 p-4 w-full md:w-auto text-right">
@@ -134,8 +145,7 @@ export function SPLRecords() {
             <label className="block text-sm font-semibold text-gray-700 mb-1">Amount (₹)</label>
             <input
               type="number"
-              required
-              min="1"
+              min="0"
               value={formData.amount}
               onChange={(e) => setFormData({...formData, amount: e.target.value})}
               className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 shadow-sm outline-none font-bold text-gray-900"
@@ -156,9 +166,10 @@ export function SPLRecords() {
           <div className="lg:col-span-3 mt-2">
             <button
               type="submit"
-              className="px-8 py-3 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold rounded-xl shadow-sm transition-colors"
+              disabled={loading}
+              className="px-8 py-3 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-bold rounded-xl shadow-sm transition-colors disabled:opacity-50"
             >
-              {editingId ? 'Update Record' : 'Add Secure Record'}
+              {loading ? 'Saving...' : (editingId ? 'Update Record' : 'Add Secure Record')}
             </button>
           </div>
         </form>
@@ -180,12 +191,22 @@ export function SPLRecords() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
-              {splRecords.map((rec, idx) => (
+              {queryLoading ? (
+                Array.from({ length: 3 }).map((_, idx) => (
+                  <tr key={idx} className="hover:bg-orange-50/30 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap"><Skeleton className="h-4 w-6" /></td>
+                    <td className="px-6 py-4 whitespace-nowrap"><Skeleton className="h-4 w-24" /></td>
+                    <td className="px-6 py-4 whitespace-nowrap"><Skeleton className="h-4 w-40" /></td>
+                    <td className="px-6 py-4 whitespace-nowrap"><Skeleton className="h-4 w-20 ml-auto" /></td>
+                    <td className="px-6 py-4 whitespace-nowrap"><Skeleton className="h-6 w-16 mx-auto rounded-full" /></td>
+                  </tr>
+                ))
+              ) : splRecords.map((rec, idx) => (
                 <tr key={rec.id} className="hover:bg-orange-50/30 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">{idx + 1}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{format(rec.date, 'dd MMM yyyy')}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{rec.description}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-600 text-right">₹{rec.amount.toLocaleString()}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-orange-600 text-right">₹{(rec.amount || 0).toLocaleString()}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                     <div className="flex items-center justify-center gap-3">
                       <button onClick={() => handleEdit(rec)} className="text-gray-400 hover:text-orange-600 transition-colors">
@@ -198,17 +219,7 @@ export function SPLRecords() {
                   </td>
                 </tr>
               ))}
-              {!initialized.splRecords && splRecords.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500 font-bold">
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="h-8 w-8 rounded-full border-4 border-orange-200 border-t-orange-600 animate-spin mb-3"></div>
-                      <p>Loading database...</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {initialized.splRecords && splRecords.length === 0 && (
+              {!queryLoading && splRecords.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-gray-500 font-bold">
                     No SPL records found.

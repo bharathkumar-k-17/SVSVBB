@@ -1,5 +1,5 @@
 export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'VOLUNTEER';
-export type UserRole = 'super_admin' | 'admin' | 'volunteer';
+export type UserRole = 'superadmin' | 'admin' | 'volunteer';
 export type UserStatus = 'approved' | 'pending' | 'rejected';
 export type PaymentMode = 'Cash' | 'UPI';
 export type PaymentStatus = 'success' | 'pending' | 'rejected';
@@ -9,21 +9,30 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  username: string;
+  phone?: string;
   role: Role;
   status: UserStatus;
-  phone?: string;
-  createdAt: string;
+  photo_url?: string;
+  created_at: string;
+  approved_at?: string;
+  approved_by?: string;
+  last_login?: string;
 }
 
 export interface AppUser {
-  uid: string;
+  id: string;
   email: string;
   name: string;
+  username: string;
   phone: string;
   role: UserRole;
   status: UserStatus;
-  createdAt: string;
-  photoURL?: string;
+  photo_url?: string;
+  created_at: string;
+  approved_at?: string;
+  approved_by?: string;
+  last_login?: string;
 }
 
 export interface FestivalYear {
@@ -122,6 +131,7 @@ export interface FestivalSettings {
   festivalYear: number;
   upiId: string;
   logoUrl?: string;
+  system_access?: boolean;
   updatedAt: string;
 }
 
@@ -166,4 +176,56 @@ export interface AnnadanamItem {
   cost: number;
   assignedVolunteer: string;
   createdAt: string;
+}
+
+export interface QRPortalSettings {
+  id: string;
+  portal_name: string;
+  committee_name: string;
+  festival_year: number;
+  temple_image_url?: string;
+  banner_image_url?: string;
+  welcome_message?: string;
+  footer_quote?: string;
+  address?: string;
+  google_maps_url?: string;
+  phone_number?: string;
+  whatsapp_number?: string;
+  email?: string;
+  facebook_url?: string;
+  instagram_url?: string;
+  youtube_url?: string;
+  website_url?: string;
+  enable_chanda: boolean;
+  enable_receipt: boolean;
+  enable_pooja: boolean;
+  enable_feedback: boolean;
+  updated_at: string;
+}
+
+export type FeedbackQuestionType = 'Rating' | 'Text' | 'Yes/No' | 'Multiple Choice';
+
+export interface FeedbackQuestion {
+  id: string;
+  question: string;
+  type: FeedbackQuestionType;
+  options: string[];
+  order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface PublicChandaRequest {
+  id: string;
+  name: string;
+  phone: string;
+  total_amount: number;
+  donation_item?: string;
+  payment_mode?: PaymentMode;
+  transaction_id?: string;
+  reference_number?: string;
+  gotram?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  created_at: number;
+  updated_at: string;
 }

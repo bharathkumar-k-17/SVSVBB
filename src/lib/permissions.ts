@@ -1,7 +1,7 @@
 import type { AppUser } from '../types';
 
-export const isAdmin = (role?: AppUser['role']) => role === 'admin' || role === 'super_admin';
-export const isSuperAdmin = (role?: AppUser['role']) => role === 'super_admin';
+export const isAdmin = (role?: AppUser['role']) => role === 'admin' || role === 'superadmin';
+export const isSuperAdmin = (role?: AppUser['role']) => role === 'superadmin';
 
 export const canManageExpenses = (role?: AppUser['role']) => isAdmin(role);
 export const canManageCultural = (role?: AppUser['role']) => isAdmin(role);

@@ -1,22 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { signOut as firebaseSignOut } from 'firebase/auth';
+
 import { useAuthStore } from '../store/authStore';
 import { useAppStore } from '../store/appStore';
 import {
   LayoutDashboard, Users, HeartHandshake, Music, Receipt,
   Crown, BookOpen, Settings as SettingsIcon, LogOut, Menu, X,
   Wallet, User, KeyRound, ChevronDown, CreditCard, ShieldAlert,
-  CalendarDays, Bell, CheckCheck
+  CalendarDays, Bell, CheckCheck, MessageSquareHeart
 } from 'lucide-react';
-import { auth } from '../lib/firebase';
 import { InstallPrompt } from './InstallPrompt';
 import { AppLock } from './AppLock';
-import {
-  AdminNotification,
-  markNotificationRead,
-  subscribeToAdminNotifications,
-} from '../lib/notifications';
+import { subscribeToUnreadCount } from '../lib/notifications';
 
 const BASE_NAV_ITEMS = [
   { path: '/dashboard',  label: 'Dashboard',          icon: LayoutDashboard },
@@ -32,17 +27,15 @@ const BASE_NAV_ITEMS = [
 
 export function Layout() {
   const { appUser, signOut } = useAuthStore();
-  const { currentYear, subscribeToDevotees, subscribeToExpenses, subscribeToCultural, subscribeToVIPGotrams, subscribeToSPLRecords } = useAppStore();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const profileRef = useRef<HTMLDivElement>(null);
-  const notificationRef = useRef<HTMLDivElement>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'super_admin';
+  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
   const isVolunteer = appUser?.role === 'volunteer';
+  const isSuperadmin = appUser?.role === 'superadmin';
 
   const NAV_ITEMS = BASE_NAV_ITEMS.filter(item => {
     if (isVolunteer) {
@@ -51,17 +44,13 @@ export function Layout() {
     }
     return true;
   }).concat(isAdmin ? [{ path: '/spl-records', label: 'SPL Records', icon: ShieldAlert }] : [])
+    .concat(isSuperadmin ? [
+      { path: '/admin/users', label: 'User Management', icon: Users },
+      { path: '/admin/qr-portal-settings', label: 'QR Portal', icon: LayoutDashboard }
+    ] : [])
     .concat([{ path: '/settings',   label: 'Settings',            icon: SettingsIcon    }]);
 
-  useEffect(() => {
-    const u1 = subscribeToDevotees();
-    const u2 = subscribeToExpenses();
-    const u3 = subscribeToVIPGotrams();
-    const u4 = subscribeToCultural();
-    let u5: any = () => {};
-    if (isAdmin) u5 = subscribeToSPLRecords();
-    return () => { u1(); u2(); u3(); u4(); u5(); };
-  }, [currentYear, isAdmin]);
+
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -69,34 +58,23 @@ export function Layout() {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
         setProfileOpen(false);
       }
-      if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
-        setNotificationsOpen(false);
-      }
+
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   useEffect(() => {
-    return subscribeToAdminNotifications(appUser, setNotifications);
-  }, [appUser?.uid, appUser?.role]);
+    return subscribeToUnreadCount(appUser, setUnreadCount);
+  }, [appUser?.email, appUser?.role]);
 
   const handleLogout = async () => {
-    await firebaseSignOut(auth);
     signOut();
     navigate('/login');
   };
 
   const initials = appUser?.name?.charAt(0)?.toUpperCase() ?? '?';
   const roleLabel = appUser?.role?.replace('_', ' ').toUpperCase() ?? '';
-  const unreadNotifications = notifications.filter((notification) => !notification.readBy?.includes(appUser?.uid || ''));
-
-  const markAllNotificationsRead = async () => {
-    if (!appUser) return;
-    await Promise.all(
-      unreadNotifications.slice(0, 10).map((notification) => markNotificationRead(notification, appUser.uid)),
-    );
-  };
 
   return (
     <div className="flex h-screen bg-orange-50/60 relative overflow-hidden">
@@ -223,84 +201,48 @@ export function Layout() {
               <Menu className="h-6 w-6" />
             </button>
 
-            {/* Center title (mobile) */}
-            <div className="flex-1 flex justify-center md:justify-start md:ml-4 items-center">
-              <span className="font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-purple-600 tracking-tight text-lg">SVSVBB</span>
-            </div>
-
-            {/* Desktop: page title area */}
-            <div className="hidden md:flex items-center gap-2">
-              <span className="text-sm text-gray-400 font-medium">
+            {/* Center title (mobile & desktop) */}
+            <div className="flex-1 flex justify-center items-center px-2">
+              <span 
+                className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600 tracking-wide text-[16px] sm:text-xl drop-shadow-sm text-center"
+                style={{ fontFamily: "'Noto Sans Telugu', sans-serif", lineHeight: 1.2 }}
+              >
                 శ్రీ వరసిద్ధి వినాయక భక్త బృందం
               </span>
             </div>
 
-            {/* ── PROFILE DROPDOWN ── */}
-            {isAdmin && (
-              <div className="relative mr-2" ref={notificationRef}>
+            {/* ── ACTIONS ── */}
+            <div className="flex items-center gap-1">
+              {isAdmin && (
                 <button
                   type="button"
-                  onClick={() => setNotificationsOpen(!notificationsOpen)}
+                  onClick={() => navigate('/admin/feedback')}
                   className="relative rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-orange-50 hover:text-orange-600"
-                  aria-label="Notifications"
+                  aria-label="Feedback Messages"
                 >
-                  <Bell size={20} />
-                  {unreadNotifications.length > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white">
-                      {unreadNotifications.length}
-                    </span>
-                  )}
+                  <MessageSquareHeart size={20} />
                 </button>
+              )}
 
-                {notificationsOpen && (
-                  <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-2xl">
-                    <div className="flex items-center justify-between border-b border-orange-100 bg-orange-50 px-4 py-3">
-                      <div>
-                        <p className="text-sm font-black text-gray-900">Notifications</p>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-orange-600">Admin Alerts</p>
-                      </div>
-                      {unreadNotifications.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={markAllNotificationsRead}
-                          className="rounded-lg bg-white px-2 py-1 text-xs font-bold text-orange-700 shadow-sm hover:bg-orange-100"
-                        >
-                          <CheckCheck size={14} className="inline-block" /> Read
-                        </button>
-                      )}
-                    </div>
-                    <div className="max-h-80 overflow-y-auto">
-                      {notifications.length > 0 ? (
-                        notifications.map((notification) => {
-                          const unread = !notification.readBy?.includes(appUser?.uid || '');
-                          return (
-                            <button
-                              key={notification.id}
-                              type="button"
-                              onClick={() => appUser && markNotificationRead(notification, appUser.uid)}
-                              className={`w-full border-b border-gray-100 px-4 py-3 text-left transition-colors hover:bg-orange-50 ${
-                                unread ? 'bg-orange-50/60' : 'bg-white'
-                              }`}
-                            >
-                              <p className="text-sm font-bold text-gray-900">{notification.message}</p>
-                              <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                                {new Date(notification.createdAt).toLocaleString()}
-                              </p>
-                            </button>
-                          );
-                        })
-                      ) : (
-                        <div className="px-4 py-8 text-center text-sm font-bold text-gray-400">
-                          No notifications yet.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+              {isAdmin && (
+                <div className="relative mr-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/notifications')}
+                    className="relative rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-orange-50 hover:text-orange-600"
+                    aria-label="Notifications"
+                  >
+                    <Bell size={20} />
+                    {unreadCount > 0 && (
+                      <span className="absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white shadow-sm">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
 
-            <div className="relative" ref={profileRef}>
+              <div className="relative" ref={profileRef}>
               <button
                 onClick={() => setProfileOpen(!profileOpen)}
                 className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-orange-50 transition-colors group"
@@ -360,6 +302,7 @@ export function Layout() {
                   </div>
                 </div>
               )}
+            </div>
             </div>
           </div>
         </header>

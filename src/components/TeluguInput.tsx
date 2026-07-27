@@ -108,49 +108,25 @@ export function TeluguInput({ value, onChange, label, placeholder, required }: T
     }
   };
 
-  // ── Debounced Real-time backend flow ──
+  // ── Debounced Real-time transliteration ──
   useEffect(() => {
     if (!rawText.trim()) {
       setLivePreview('');
       return;
     }
 
-    const isInternal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    
     const timer = setTimeout(async () => {
-      // If we are on a mobile device and trying to hit localhost, it's likely going to fail.
-      // We skip the AI check if we know it's unreachable, going straight to fallback.
-      if (!isInternal && window.location.hostname.match(/\d+\.\d+\.\d+\.\d+/)) {
-         const fb = await translateToTelugu(rawText);
-         setLivePreview(fb);
-         return;
-      }
-
       setIsProcessingPreview(true);
       try {
-        const res = await fetch('http://localhost:3001/api/telugu-correct', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: rawText })
-        });
-        const data = await res.json();
-        
-        if (data && data.correctedText) {
-          setLivePreview(data.correctedText);
-        } else {
-          // Fallback
-          const fb = await translateToTelugu(rawText);
-          setLivePreview(fb);
-        }
-      } catch (err) {
-        console.error("Backend real-time fetch error", err);
-        // Fallback
         const fb = await translateToTelugu(rawText);
         setLivePreview(fb);
+      } catch (err) {
+        console.error("Transliteration preview error", err);
+        setLivePreview(rawText);
       } finally {
         setIsProcessingPreview(false);
       }
-    }, 600); // 600ms debounce
+    }, 300); // 300ms debounce for Google API to feel instant without spamming
 
     return () => clearTimeout(timer);
   }, [rawText]);
@@ -168,44 +144,21 @@ export function TeluguInput({ value, onChange, label, placeholder, required }: T
     setIsProcessing(true);
     setBackendStatus('idle');
     try {
-      const isInternal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      // If accessed via IP on mobile, localhost will definitely fail. Fallback immediately.
-      if (!isInternal && window.location.hostname.match(/\d+\.\d+\.\d+\.\d+/)) {
-         throw new Error('Skipping localhost check on non-local origin');
-      }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000); // reduced to 3s timeout
-      const res = await fetch('http://localhost:3001/api/telugu-correct', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToProcess }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      const data = await res.json();
-      const correctedText = data.correctedText?.trim();
-      if (correctedText) {
-        onChange(correctedText);
-        setBackendStatus('ok');
-        setRawText('');
-        setLivePreview('');
-        rawTextRef.current = '';
-      } else {
-        throw new Error('Empty backend response');
-      }
-    } catch (error) {
-      // Silent fallback — no alert popup
-      console.warn('Backend unavailable, using transliteration fallback:', error);
-      setBackendStatus('fallback');
       const fallback = await translateToTelugu(textToProcess);
       onChange(fallback || textToProcess);
+      setBackendStatus('ok');
+      setRawText('');
+      setLivePreview('');
+      rawTextRef.current = '';
+    } catch (error) {
+      console.warn('Transliteration failed:', error);
+      setBackendStatus('fallback');
+      onChange(textToProcess);
       setRawText('');
       setLivePreview('');
       rawTextRef.current = '';
     } finally {
       setIsProcessing(false);
-      // Clear status after 3 seconds
       setTimeout(() => setBackendStatus('idle'), 3000);
     }
   };
@@ -312,12 +265,12 @@ export function TeluguInput({ value, onChange, label, placeholder, required }: T
 
           {backendStatus === 'fallback' && (
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
-              <span>⚡</span> Using transliteration — AI server offline
+              <span>⚡</span> Using manual text
             </div>
           )}
           {backendStatus === 'ok' && (
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
-              <span>✅</span> AI corrected successfully
+              <span>✅</span> Transliterated successfully
             </div>
           )}
 

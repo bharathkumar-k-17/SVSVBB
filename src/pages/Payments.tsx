@@ -1,45 +1,64 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
-import { Search, Edit, Trash2, Wallet, QrCode } from 'lucide-react';
+import { usePayments } from '../hooks/queries';
+import { useDebounce } from '../hooks/useDebounce';
+import { Search, Edit, Trash2, Wallet, QrCode, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
-import { deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
 import { EditDevoteeModal } from '../components/EditDevoteeModal';
 import { maskPhoneNumber } from '../lib/privacy';
+import { Skeleton } from '../components/ui/Skeleton';
 
 export function Payments() {
-  const { devotees } = useAppStore();
+  const { currentYear } = useAppStore();
   const { appUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'Cash' | 'UPI'>('Cash');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearch = useDebounce(searchInput, 300);
   
+  const [page, setPage] = useState(0);
+  const pageSize = 20;
+
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedDevotee, setSelectedDevotee] = useState<any>(null);
 
-  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'super_admin';
+  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
 
-  const displayedPayments = useMemo(() => {
-    return devotees.filter(d => {
-      // Show based on the mode
-      if (d.paymentMode !== activeTab) return false;
-      // Must have some payment
-      if ((d.paidAmount || 0) <= 0) return false;
-      
-      const searchLower = searchQuery.toLowerCase();
-      return (d.name || '').toLowerCase().includes(searchLower) ||
-             (d.phone || '').includes(searchQuery) ||
-             (d.receiptNo || '').toLowerCase().includes(searchLower);
-    });
-  }, [devotees, activeTab, searchQuery]);
+  const { data: paymentsData, isLoading, refetch } = usePayments(
+    currentYear,
+    page,
+    pageSize,
+    debouncedSearch,
+    activeTab
+  );
 
+  const displayedPayments = paymentsData?.data || [];
+  const totalCount = paymentsData?.count || 0;
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  const handleTabChange = (tab: 'Cash' | 'UPI') => {
+    setActiveTab(tab);
+    setPage(0);
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(e.target.value);
+    setPage(0);
+  };
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this payment record entirely?')) {
       try {
-        await deleteDoc(doc(db, 'devotees', id));
-      } catch (err) {
+        const { error } = await supabase
+          .from('devotees')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+        refetch();
+      } catch (err: any) {
         console.error(err);
-        alert('Failed to delete.');
+        alert(`Failed to delete: ${err.message || 'Unknown error'}`);
       }
     }
   };
@@ -66,7 +85,7 @@ export function Payments() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex gap-4">
               <button
-                onClick={() => setActiveTab('Cash')}
+                onClick={() => handleTabChange('Cash')}
                 className={`flex items-center gap-2 pb-4 -mb-4 px-2 text-sm font-bold border-b-2 transition-colors ${
                   activeTab === 'Cash' 
                     ? 'border-primary text-primary' 
@@ -77,7 +96,7 @@ export function Payments() {
                 Cash Payments
               </button>
               <button
-                onClick={() => setActiveTab('UPI')}
+                onClick={() => handleTabChange('UPI')}
                 className={`flex items-center gap-2 pb-4 -mb-4 px-2 text-sm font-bold border-b-2 transition-colors ${
                   activeTab === 'UPI' 
                     ? 'border-primary text-primary' 
@@ -94,8 +113,8 @@ export function Payments() {
               <input
                 type="text"
                 placeholder=""
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={handleSearchChange}
                 className="pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-full focus:ring-2 focus:ring-primary focus:border-transparent w-full outline-none"
               />
             </div>
@@ -114,7 +133,20 @@ export function Payments() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {displayedPayments.length > 0 ? displayedPayments.map((dev) => (
+              {isLoading ? (
+                Array.from({ length: pageSize }).map((_, idx) => (
+                  <tr key={idx} className="hover:bg-orange-50/20 transition-colors">
+                    <td className="px-6 py-4">
+                      <Skeleton className="h-5 w-40 mb-1" />
+                      <Skeleton className="h-3 w-32 mb-1" />
+                      <Skeleton className="h-3 w-16" />
+                    </td>
+                    <td className="px-6 py-4"><Skeleton className="h-6 w-24" /></td>
+                    <td className="px-6 py-4"><Skeleton className="h-6 w-24" /></td>
+                    <td className="px-6 py-4"><Skeleton className="h-6 w-16 mx-auto rounded-full" /></td>
+                  </tr>
+                ))
+              ) : displayedPayments.length > 0 ? displayedPayments.map((dev) => (
                 <tr key={dev.id} className="hover:bg-orange-50/20 transition-colors">
                   <td className="px-6 py-4">
                     <p className="font-bold text-gray-800 text-base">{dev.name}</p>
@@ -149,6 +181,31 @@ export function Payments() {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination Controls */}
+        {!isLoading && totalPages > 1 && (
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between mt-auto">
+             <div className="text-sm text-gray-600">
+               Showing {page * pageSize + 1} to {Math.min((page + 1) * pageSize, totalCount)} of {totalCount} entries
+             </div>
+             <div className="flex gap-2">
+               <button
+                 onClick={() => setPage(p => Math.max(0, p - 1))}
+                 disabled={page === 0}
+                 className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+               >
+                 <ChevronLeft className="h-4 w-4" />
+               </button>
+               <button
+                 onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                 disabled={page >= totalPages - 1}
+                 className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+               >
+                 <ChevronRight className="h-4 w-4" />
+               </button>
+             </div>
+          </div>
+        )}
       </div>
 
       {showEditModal && selectedDevotee && (
@@ -157,4 +214,3 @@ export function Payments() {
     </div>
   );
 }
-

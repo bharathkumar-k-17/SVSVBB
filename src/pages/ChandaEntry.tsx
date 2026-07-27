@@ -1,36 +1,65 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
-import { addDoc, collection, doc, getDoc, getDocs, query, where, setDoc, runTransaction } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { QrCode, CreditCard, Banknote, Save, HeartHandshake, Crown, X } from 'lucide-react';
+import { useDevotees, useAppSettings } from '../hooks/queries';
+import { supabase } from '../lib/supabase';
+import { QrCode, Banknote, Save, HeartHandshake, Crown } from 'lucide-react';
 import { Receipt } from '../components/Receipt';
 import { QRCodeSVG } from 'qrcode.react';
 import { TeluguInput } from '../components/TeluguInput';
 import { format } from 'date-fns';
 import { MaskedPhoneInput } from '../components/MaskedPhoneInput';
 import { createAdminNotification } from '../lib/notifications';
-import { maskPhoneNumber, normalizePhoneDigits } from '../lib/privacy';
+import { maskPhoneNumber, normalizePhoneDigits, getWhatsAppNumber } from '../lib/privacy';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
-export function ChandaEntry() {
-  const { currentYear, devotees } = useAppStore();
+interface ChandaEntryProps {
+  isPortal?: boolean;
+}
+
+export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
+  const { currentYear } = useAppStore();
   const { appUser } = useAuthStore();
+  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
+  
+  // Use React Query for recent devotees
+  const { data: devoteesData, refetch: refetchDevotees } = useDevotees(currentYear, 0, 50, '', 'ALL', 'LATEST');
+  const devotees = devoteesData?.data || [];
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [lastSavedDevotee, setLastSavedDevotee] = useState<any>(null);
   const [upiId, setUpiId] = useState('');
+  const [upiPaymentInitiated, setUpiPaymentInitiated] = useState(false);
+
+  const generatePDF = async (receiptNo: string) => {
+    const element = document.getElementById('receipt-container');
+    if (!element) return;
+    try {
+      await new Promise(r => setTimeout(r, 300));
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Receipt_${receiptNo}.pdf`);
+    } catch (err) {
+      console.error('PDF generation failed', err);
+    }
+  };
+
+  const { data: appSettings } = useAppSettings();
 
   useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'settings', 'app'));
-        if (snap.exists() && snap.data().upiId) {
-          setUpiId(snap.data().upiId);
-        }
-      } catch (err) {}
-    };
-    fetchSettings();
-  }, []);
+    if (appSettings?.upi_id) {
+      setUpiId(appSettings.upi_id);
+    }
+  }, [appSettings]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -46,7 +75,7 @@ export function ChandaEntry() {
 
   const totalAmtNum = Number(formData.totalAmount) || 0;
   const isVip = totalAmtNum >= 1000 || formData.donationItem.trim().length > 0;
-  const isAdmin = appUser?.role === 'admin' || appUser?.role === 'super_admin';
+  
   const isCurrentDay = (timestamp?: number) => {
     if (!timestamp) return false;
     const date = new Date(timestamp);
@@ -54,16 +83,69 @@ export function ChandaEntry() {
     return date.toDateString() === today.toDateString();
   };
   const todaysCollections = devotees.filter(
-    (devotee) => isCurrentDay(devotee.createdAt) && (isAdmin || devotee.volunteerId === appUser?.uid),
+    (devotee) => isCurrentDay(devotee.createdAt) && (isAdmin || devotee.volunteerId === appUser?.email),
   );
 
+  // Generate receipt number using atomic counter
+  const generateReceiptNo = async (): Promise<string> => {
+    const now = Date.now();
+    const yy = format(now, 'yy');
+    const mm = format(now, 'MM');
+    const dd = format(now, 'dd');
+    const dateStr = `${yy}${mm}${dd}`;
+    const counterKey = `receipt_${dateStr}`;
 
+    try {
+      // Try RPC function first (atomic, preferred)
+      const { data: rpcData, error: rpcError } = await supabase.rpc('generate_receipt_no', {
+        date_str: dateStr,
+      });
+
+      if (!rpcError && rpcData) {
+        return rpcData as string;
+      }
+
+      // Fallback: manual upsert approach
+      // First try to increment existing counter
+      const { data: existing } = await supabase
+        .from('counters')
+        .select('count')
+        .eq('id', counterKey)
+        .single();
+
+      let currentCount: number;
+      if (existing) {
+        currentCount = (existing.count || 0) + 1;
+        await supabase
+          .from('counters')
+          .update({ count: currentCount })
+          .eq('id', counterKey);
+      } else {
+        currentCount = 1;
+        await supabase
+          .from('counters')
+          .insert({ id: counterKey, count: 1 });
+      }
+
+      return `G${dateStr}${currentCount.toString().padStart(3, '0')}`;
+    } catch (err) {
+      // Last resort: timestamp-based receipt
+      console.warn('Receipt counter failed, using timestamp fallback:', err);
+      const ts = Date.now().toString().slice(-4);
+      return `G${dateStr}${ts}`;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!appUser) return;
-    if (normalizePhoneDigits(formData.phone).length !== 10) {
-      alert('Enter a valid 10-digit phone number.');
+    if (!isPortal && !appUser) return;
+    let rawPhone = normalizePhoneDigits(formData.phone);
+    if (rawPhone.length === 12 && rawPhone.startsWith('91')) {
+      rawPhone = rawPhone.slice(2);
+    }
+    
+    if (rawPhone && rawPhone.length !== 10) {
+      alert('Enter a valid 10-digit phone number or leave it blank.');
       return;
     }
     setLoading(true);
@@ -71,32 +153,7 @@ export function ChandaEntry() {
 
     try {
       const now = Date.now();
-      
-      const yy = format(now, 'yy');
-      const mm = format(now, 'MM');
-      const dd = format(now, 'dd');
-      const dateStr = `${yy}${mm}${dd}`;
-      const counterRef = doc(db, 'counters', `receipt_${dateStr}`);
-      let currentCount = 1;
-
-      try {
-        await runTransaction(db, async (transaction) => {
-          const counterDoc = await transaction.get(counterRef);
-          if (!counterDoc.exists()) {
-            transaction.set(counterRef, { count: 1 });
-            currentCount = 1;
-          } else {
-            currentCount = counterDoc.data().count + 1;
-            transaction.update(counterRef, { count: currentCount });
-          }
-        });
-      } catch (txnError) {
-        console.error("Transaction failed: ", txnError);
-        throw new Error("Ensure device is online to generate secure tracking ID.");
-      }
-
-      const paddedCount = currentCount.toString().padStart(3, '0');
-      const receiptNo = `G${dateStr}${paddedCount}`;
+      const receiptNo = await generateReceiptNo();
 
       const tAmt = Number(formData.totalAmount) || 0;
       const pAmt = Number(formData.paidAmount) || 0;
@@ -105,7 +162,80 @@ export function ChandaEntry() {
 
       const devoteeData = {
         name: formData.name,
-        phone: normalizePhoneDigits(formData.phone),
+        phone: rawPhone,
+        total_amount: tAmt,
+        paid_amount: pAmt,
+        pending_amount: pending,
+        donation_item: formData.donationItem,
+        payment_mode: formData.paymentMode,
+        payment_status: status,
+        gotram: isVip ? formData.gotram : '',
+        family_members: isVip ? formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+        year: currentYear,
+        volunteer_id: isPortal ? 'portal' : (appUser?.email || 'admin'),
+        volunteer_name: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
+        volunteer_phone: isPortal ? formData.phone : (appUser?.phone || ''),
+        created_at: formData.date ? new Date(formData.date).getTime() : now,
+        receipt_no: receiptNo,
+      };
+
+      const { data: insertedRow, error: insertError } = await supabase
+        .from('devotees')
+        .insert(devoteeData)
+        .select('id')
+        .single();
+
+      if (insertError) throw insertError;
+
+      const devoteeId = insertedRow.id;
+
+      let notifType = '';
+      let notifMessage = '';
+      const amountStr = new Intl.NumberFormat('en-IN').format(pAmt);
+
+      if (isPortal) {
+        if (pAmt > 0) {
+          notifType = 'QR PORTAL · CHANDA';
+          notifMessage = `${formData.name || 'Unknown'} submitted ₹${amountStr} Chanda via ${formData.paymentMode}.`;
+        } else {
+          notifType = 'QR PORTAL · REGISTRATION';
+          notifMessage = `${formData.name || 'Unknown'} completed a new registration.`;
+        }
+      } else {
+        notifType = 'CHANDA ENTRY';
+        notifMessage = `${appUser?.name || 'Volunteer'} added ₹${amountStr} Chanda from ${formData.name || 'Unknown'}.`;
+      }
+
+      createAdminNotification({
+        actor: appUser,
+        actorName: isPortal ? formData.name || 'Unknown' : undefined,
+        type: notifType,
+        message: notifMessage
+      }).catch(console.error);
+
+      // Save initial payment
+      if (pAmt > 0) {
+        supabase
+          .from('payment_histories')
+          .insert({
+            devotee_id: devoteeId,
+            amount: pAmt,
+            mode: formData.paymentMode,
+            date: now,
+            volunteer_id: isPortal ? 'portal' : (appUser?.email || 'admin'),
+            volunteer_name: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
+            year: currentYear,
+          })
+          .then(({ error }) => {
+            if (error) console.warn('Payment history insert failed:', error);
+          });
+      }
+
+      // Build camelCase object for the Receipt component (it expects app-side types)
+      const savedDevotee = {
+        id: devoteeId,
+        name: formData.name,
+        phone: rawPhone,
         totalAmount: tAmt,
         paidAmount: pAmt,
         pendingAmount: pending,
@@ -115,60 +245,48 @@ export function ChandaEntry() {
         gotram: isVip ? formData.gotram : '',
         familyMembers: isVip ? formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean) : [],
         year: currentYear,
-        volunteerId: appUser.uid || 'admin',
-        volunteerName: appUser.name || 'Admin',
-        volunteerPhone: appUser.phone || '',
+        volunteerId: isPortal ? 'portal' : (appUser?.email || 'admin'),
+        volunteerName: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
+        volunteerPhone: isPortal ? formData.phone : (appUser?.phone || ''),
         createdAt: formData.date ? new Date(formData.date).getTime() : now,
-        receiptNo
+        receiptNo: receiptNo,
       };
-
-      const docRef = doc(collection(db, 'devotees'));
-      await setDoc(docRef, devoteeData);
-      await createAdminNotification({ actor: appUser, type: 'chanda', amount: pAmt });
-      
-      // Save initial payment
-      if (pAmt > 0) {
-        addDoc(collection(db, 'payments'), {
-          devoteeId: docRef.id,
-          amount: pAmt,
-          mode: formData.paymentMode,
-          date: now,
-          volunteerId: appUser.uid || 'admin',
-          volunteerName: appUser.name || 'Admin',
-          year: currentYear
-        }).catch((err: any) => console.warn(err));
-      }
-
-      const savedDevotee = { id: docRef.id, ...devoteeData };
       setLastSavedDevotee(savedDevotee);
       setSuccess(true);
+      refetchDevotees();
+      
+      // Auto-generate and download PDF only in portal mode
+      if (isPortal) {
+        setTimeout(() => generatePDF(receiptNo), 500);
+      }
 
       // ── Auto-add to VIP Gothram list if amount >= 1000 and gotram is provided ──
       if (tAmt >= 1000 && isVip && formData.gotram.trim()) {
         try {
-          // Check for duplicate gotram (case-insensitive)
-          getDocs(
-            query(
-              collection(db, 'vipGotrams'),
-              where('year', '==', currentYear)
-            )
-          ).then(vipSnap => {
-             const maxOrder = vipSnap.docs.reduce((max, d) => Math.max(max, d.data().order ?? 0), 0);
-             addDoc(collection(db, 'vipGotrams'), {
-               gotram: formData.gotram.trim(),
-               familyMembers: formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean),
-               order: maxOrder + 1,
-               source: 'Chanda',
-               devoteeId: docRef.id,
-               year: currentYear,
-               createdAt: now
-             });
+          // Get max order for the year
+          const { data: vipData } = await supabase
+            .from('vip_gotrams')
+            .select('order')
+            .eq('year', currentYear)
+            .order('order', { ascending: false })
+            .limit(1);
+
+          const maxOrder = vipData && vipData.length > 0 ? (vipData[0].order ?? 0) : 0;
+
+          await supabase.from('vip_gotrams').insert({
+            gotram: formData.gotram.trim(),
+            family_members: formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean),
+            order: maxOrder + 1,
+            source: 'Chanda',
+            devotee_id: devoteeId,
+            year: currentYear,
+            created_at: now,
           });
         } catch (vipErr) {
           console.warn('VIP auto-add failed (non-critical):', vipErr);
         }
       }
-      
+
       setFormData({
         name: '',
         phone: '',
@@ -180,6 +298,7 @@ export function ChandaEntry() {
         familyMembersStr: '',
         date: format(new Date(), 'yyyy-MM-dd')
       });
+      setUpiPaymentInitiated(false);
 
     } catch (error: any) {
       console.error("Error adding devotee: ", error);
@@ -187,6 +306,67 @@ export function ChandaEntry() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const hasPhone = formData.phone && normalizePhoneDigits(formData.phone).length === 10;
+
+  const handleShareWhatsApp = async () => {
+    if (!lastSavedDevotee?.phone || !lastSavedDevotee?.id) return;
+    setLoading(true);
+    try {
+      const targetPhone = getWhatsAppNumber(lastSavedDevotee.phone);
+      if (!targetPhone) {
+        alert("Invalid phone number for WhatsApp.");
+        return;
+      }
+
+      const baseUrl = window.location.origin;
+      const receiptUrl = `${baseUrl}/portal/receipt/${lastSavedDevotee.id}`;
+      
+      const paymentMsg = lastSavedDevotee.paymentMode === 'UPI' && lastSavedDevotee.paidAmount === 0 
+        ? 'మీ చందా నమోదు చేయబడింది.' 
+        : 'మీ చందా విజయవంతంగా నమోదు చేయబడింది.';
+        
+      const text = `🙏 నమస్కారం 🙏
+
+శ్రీ వరసిద్ధి వినాయక భక్త బృందం
+
+${paymentMsg}
+
+పేరు: ${lastSavedDevotee.name}
+రసీదు నం: ${lastSavedDevotee.receiptNo}
+మొత్తం: ₹${lastSavedDevotee.totalAmount}
+చెల్లింపు విధానం: ${lastSavedDevotee.paymentMode}
+
+రసీదు చూడటానికి / డౌన్లోడ్ చేసుకోవడానికి:
+${receiptUrl}
+
+🙏 ధన్యవాదాలు 🙏`;
+
+      const waLink = `https://wa.me/${targetPhone}?text=${encodeURIComponent(text)}`;
+      console.log('Target Phone:', targetPhone, 'WA Link:', waLink);
+      window.open(waLink, '_blank');
+      
+    } catch (e) {
+      console.error("WhatsApp share error:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleShareSMS = () => {
+    if (!lastSavedDevotee?.phone || !lastSavedDevotee?.id) return;
+    const normalizedPhone = normalizePhoneDigits(lastSavedDevotee.phone);
+    const baseUrl = window.location.origin;
+    const receiptUrl = `${baseUrl}/portal/receipt/${lastSavedDevotee.id}`;
+    
+    const paymentMsg = lastSavedDevotee.paymentMode === 'UPI' && lastSavedDevotee.paidAmount === 0 
+      ? `SVSVBB Chanda recorded.`
+      : `SVSVBB Chanda ₹${lastSavedDevotee.totalAmount} received.`;
+      
+    const text = `🙏 నమస్కారం 🙏\n${paymentMsg}\nReceipt: ${lastSavedDevotee.receiptNo}\nReceipt: ${receiptUrl}\nధన్యవాదాలు 🙏`;
+    const smsLink = `sms:+91${normalizedPhone}?body=${encodeURIComponent(text)}`;
+    window.open(smsLink, '_self');
   };
 
   return (
@@ -205,17 +385,40 @@ export function ChandaEntry() {
               <p className="text-sm">Please see the generated receipt below. You can print or share it using the buttons provided.</p>
             </div>
             
-            <div className="w-full">
+            <div className="w-full" id="receipt-container">
               <Receipt 
                 data={lastSavedDevotee} 
                 isBlank={false}
+                hideActions={!isPortal}
+                isPortal={isPortal}
               />
             </div>
+            
+            {/* Custom Sharing Buttons for Private UI */}
+            {!isPortal && lastSavedDevotee.phone && (
+              <div className="flex justify-center gap-4 mt-6">
+                <button
+                  onClick={handleShareWhatsApp}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 transition-colors disabled:opacity-50"
+                >
+                  {loading ? <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span> : 'WhatsApp'}
+                </button>
+                <button
+                  onClick={handleShareSMS}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600 transition-colors disabled:opacity-50"
+                >
+                  SMS
+                </button>
+              </div>
+            )}
             
             <button
                onClick={() => {
                  setSuccess(false);
                  setLastSavedDevotee(null);
+                 setUpiPaymentInitiated(false);
                  setFormData({ name: '', phone: '', totalAmount: '', paidAmount: '', donationItem: '', paymentMode: 'Cash', gotram: '', familyMembersStr: '', date: format(new Date(), 'yyyy-MM-dd') });
                }}
                className="mt-6 w-full flex items-center justify-center gap-2 py-3 border border-gray-300 rounded-xl shadow-sm bg-white font-bold text-gray-700 hover:bg-gray-50"
@@ -253,7 +456,6 @@ export function ChandaEntry() {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Mobile Number</label>
                 <MaskedPhoneInput
-                  required
                   value={formData.phone}
                   onChange={(phone) => setFormData({...formData, phone})}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary transition-all shadow-sm outline-none text-base"
@@ -318,7 +520,10 @@ export function ChandaEntry() {
                   name="paymentMode"
                   value="Cash"
                   checked={formData.paymentMode === 'Cash'}
-                  onChange={() => setFormData({...formData, paymentMode: 'Cash'})}
+                  onChange={() => {
+                    setFormData({...formData, paymentMode: 'Cash'});
+                    setUpiPaymentInitiated(false);
+                  }}
                   className="hidden"
                 />
                 <Banknote className="mr-2" size={20} />
@@ -331,7 +536,10 @@ export function ChandaEntry() {
                   name="paymentMode"
                   value="UPI"
                   checked={formData.paymentMode === 'UPI'}
-                  onChange={() => setFormData({...formData, paymentMode: 'UPI'})}
+                  onChange={() => {
+                    setFormData({...formData, paymentMode: 'UPI'});
+                    setUpiPaymentInitiated(false);
+                  }}
                   className="hidden"
                 />
                 <QrCode className="mr-2" size={20} />
@@ -343,10 +551,59 @@ export function ChandaEntry() {
               <div className="mt-4 p-5 bg-white border border-orange-200 rounded-xl flex flex-col items-center justify-center text-center">
                 {upiId ? (() => {
                   const numAmt = Number(formData.paidAmount) || 0;
-                  const upiUrl = `upi://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt > 0 ? numAmt : ''}&cu=INR`;
+                  const upiUrl = `upi://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt > 0 ? numAmt : ''}&cu=INR&tn=Chanda%20Donation`;
+                  
+                  const handleAppSelect = (appName: string) => {
+                    if (numAmt <= 0) {
+                      alert('Enter a valid Paid Amount greater than 0.');
+                      return;
+                    }
+                    let intentUrl = upiUrl;
+                    if (appName === 'PhonePe') intentUrl = `phonepe://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                    else if (appName === 'Google Pay') intentUrl = `tez://upi/pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                    else if (appName === 'Paytm') intentUrl = `paytmmp://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                    else if (appName === 'BHIM') intentUrl = `bhim://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                    
+                    setUpiPaymentInitiated(true);
+                    window.location.href = intentUrl;
+                    
+                    // Fallback in case intent doesn't work (e.g. desktop)
+                    setTimeout(() => {
+                      if (!document.hidden) {
+                        setUpiPaymentInitiated(true);
+                      }
+                    }, 2000);
+                  };
+
                   return (
                     <>
-                       <div className="bg-white p-3 rounded-2xl shadow-sm border border-orange-100 mb-4 inline-block">
+                       {isPortal && !upiPaymentInitiated ? (
+                         <div className="w-full animate-in fade-in slide-in-from-top-2">
+                           <p className="text-sm font-bold text-gray-700 mb-3">Select Payment App</p>
+                           <div className="grid grid-cols-5 gap-2 mb-4">
+                             {['PhonePe', 'Google Pay', 'Paytm', 'BHIM', 'Other UPI'].map(app => (
+                               <button
+                                 key={app}
+                                 type="button"
+                                 onClick={() => handleAppSelect(app)}
+                                 className="flex flex-col items-center justify-center bg-gray-50 p-2 rounded-xl border border-gray-200 hover:border-orange-400 hover:bg-orange-50 transition-all group"
+                               >
+                                 <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-gray-400 group-hover:text-orange-500 mb-1 shadow-sm">
+                                   <QrCode size={20} />
+                                 </div>
+                                 <span className="text-[10px] font-bold text-gray-600 text-center leading-tight">{app}</span>
+                               </button>
+                             ))}
+                           </div>
+                           <div className="relative flex py-2 items-center">
+                              <div className="flex-grow border-t border-gray-200"></div>
+                              <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-medium">OR Scan QR Code</span>
+                              <div className="flex-grow border-t border-gray-200"></div>
+                           </div>
+                         </div>
+                       ) : null}
+                       
+                       <div className="bg-white p-3 rounded-2xl shadow-sm border border-orange-100 mb-4 inline-block mt-2">
                          <QRCodeSVG value={upiUrl} size={150} level="M" />
                        </div>
                        <div className="w-full bg-orange-50 rounded-lg p-3 text-sm text-gray-700 border border-orange-100/50 shadow-sm text-left">
@@ -359,9 +616,6 @@ export function ChandaEntry() {
                            <span className="font-bold text-red-600">₹{numAmt}</span>
                          </div>
                        </div>
-                       <p className="text-xs text-orange-600 font-semibold mt-3 bg-white/50 py-1 px-3 rounded-full border border-orange-200">
-                         Scan to pay securely via UPI
-                       </p>
                     </>
                   );
                 })() : (
@@ -402,22 +656,25 @@ export function ChandaEntry() {
              </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-4 border border-transparent rounded-xl shadow-md text-white font-bold text-lg bg-gradient-to-r from-primary to-orange-500 hover:from-orange-600 hover:to-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-               <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></span>
-             ) : (
-                <> <Save size={24} /> Save & Share </>
-             )}
-          </button>
+          {formData.paymentMode === 'UPI' && isPortal && !upiPaymentInitiated ? null : (
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 py-4 border border-transparent rounded-xl shadow-md text-white font-bold text-lg bg-gradient-to-r from-primary to-orange-500 hover:from-orange-600 hover:to-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                 <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></span>
+               ) : (
+                  <> <Save size={24} /> {formData.paymentMode === 'UPI' && upiPaymentInitiated ? '✅ Save & Register' : (isPortal ? 'Save & Register' : (hasPhone ? 'Save & Share' : 'Save'))} </>
+               )}
+            </button>
+          )}
         </form>
         )}
       </div>
 
       {/* Current Day Collections */}
+      {!isPortal && (
       <div className="mt-8 bg-white/50 backdrop-blur-xl rounded-2xl shadow-lg border border-white/60 overflow-hidden relative">
         <div className="px-6 py-4 border-b border-white/40 flex justify-between items-center bg-white/30 backdrop-blur-sm">
           <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
@@ -442,7 +699,7 @@ export function ChandaEntry() {
             </thead>
             <tbody className="divide-y divide-white/20 bg-white/10">
               {todaysCollections
-                .map((dev, idx) => (
+                .map((dev: any, idx: number) => (
                   <tr key={dev.id} className="hover:bg-white/40 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-center text-xs font-bold text-gray-500">
                       {idx + 1}
@@ -486,6 +743,7 @@ export function ChandaEntry() {
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }

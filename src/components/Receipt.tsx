@@ -3,12 +3,9 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { QRCodeSVG } from 'qrcode.react';
 import { Download, Printer, Share2, ImageIcon, Loader2 } from 'lucide-react';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, storage, functions } from '../lib/firebase';
-import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { httpsCallable } from 'firebase/functions';
 import toast from 'react-hot-toast';
 import { maskPhoneNumber } from '../lib/privacy';
+import { supabase } from '../lib/supabase';
 
 /* ─── Types ─────────────────────────────────────── */
 type FamilyMembers = string | string[] | undefined;
@@ -38,6 +35,8 @@ interface ReceiptProps {
   isBlank?: boolean;
   logoSrc?: string;
   qrValue?: string;
+  hideActions?: boolean;
+  isPortal?: boolean;
 }
 
 /* ─── Helpers ─────────────────────────────────── */
@@ -54,19 +53,22 @@ const parseFamilyMembers = (fm: FamilyMembers): string[] => {
 
 /* ─── Main Component ──────────────────────────── */
 export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
-  ({ data, currentYear, isBlank = false, logoSrc = '/logo.jpg', qrValue }, ref) => {
+  ({ data, currentYear, isBlank = false, logoSrc = '/logo.jpg', qrValue, hideActions = false, isPortal = false }, ref) => {
     const exportRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState<string | null>(null);
-    const [waStatus, setWaStatus] = useState<null | 'sending' | 'sent' | 'failed'>(data?.whatsappSent ? 'sent' : null);
     const [upiId, setUpiId] = useState<string>('');
 
     useImperativeHandle(ref, () => exportRef.current as HTMLDivElement);
 
     /* ─ Fetch UPI ID ─ */
     useEffect(() => {
-      getDoc(doc(db, 'settings', 'app'))
-        .then(snap => { if (snap.exists() && snap.data().upiId) setUpiId(snap.data().upiId); })
-        .catch(() => {});
+      const fetchUpi = async () => {
+        try {
+          const { data } = await supabase.from('app_settings').select('upi_id').eq('id', 'app').maybeSingle();
+          if (data?.upi_id) setUpiId(data.upi_id);
+        } catch (err) {}
+      };
+      fetchUpi();
     }, []);
 
     /* ─ Derived values ─ */
@@ -190,132 +192,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
       }
     });
 
-    /* ─ NEW: Automated Meta API Flow ─ */
-    const autoSendWhatsApp = async (silent = false) => {
-      // 1. DUPLICATE PREVENTION
-      if (data?.whatsappSent || waStatus === 'sent') {
-        if (!silent) toast.error('WhatsApp message already sent.');
-        return;
-      }
-
-      // 2. SEND CONDITIONS (COST OPTIMIZATION)
-      const paidAmt = Number(data?.paidAmount ?? 0);
-      const totalAmt = Number(data?.totalAmount ?? 0);
-      const isFullyPaid = (totalAmt > 0 && pendingAmt === 0);
-      if (paidAmt <= 0 && !isFullyPaid) {
-        if (!silent) toast.error('Will not send WhatsApp for unpaid entries.');
-        return;
-      }
-
-      if (!data?.phone || !data?.name) {
-        if (!silent) toast.error('Phone and Name are required');
-        return;
-      }
-
-      setWaStatus('sending');
-      await withLoading('auto-wa', async () => {
-        try {
-          const canvas = await capture(); if (!canvas) {
-            setWaStatus(null);
-            if (!silent) toast.error('Failed to capture receipt image.');
-            return;
-          }
-          
-          // 1. Generate PDF
-          const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-          const pageW = pdf.internal.pageSize.getWidth();
-          const pageH = pdf.internal.pageSize.getHeight();
-          const margin = 12;
-          const imgW = pageW - margin * 2;
-          const imgH = (canvas.height * imgW) / canvas.width;
-          const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
-          pdf.addImage(canvas.toDataURL('image/jpeg', 0.8), 'JPEG', margin, yOffset, imgW, imgH, '', 'FAST');
-          
-          const pdfBlob = pdf.output('blob');
-          
-          // 2. Upload to Firebase Storage
-          const storageReference = sRef(storage, `receipts/${displayYear}/${receiptNo}.pdf`);
-          const snapshot = await uploadBytes(storageReference, pdfBlob, { contentType: 'application/pdf' });
-          const downloadUrl = await getDownloadURL(snapshot.ref);
-
-          // 3. Call server for WhatsApp
-          const baseUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-              ? 'http://localhost:3001' 
-              : ''; // Fallback for production if they deploy server.js alongside the frontend
-
-          let success = false;
-          let retries = 2;
-          let lastError: any = null;
-
-          while (retries >= 0 && !success) {
-            try {
-              const response = await fetch(`${baseUrl}/api/whatsapp`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone: data.phone, name: data.name, amount: data.paidAmount, pdfUrl: downloadUrl })
-              });
-
-              if (!response.ok) {
-                 const errText = await response.text();
-                 throw new Error(errText || 'Local server rejected WhatsApp request');
-              }
-              const result = await response.json();
-              if (result.success === false) {
-                 throw new Error(result.message || 'WhatsApp sending failed within Server');
-              }
-
-              success = true;
-              if (!silent) toast.success('Official WhatsApp Receipt Sent!', { duration: 4000 });
-              
-              setWaStatus('sent');
-              
-              // 4. LOGGING & DUPLICATE PREVENTION
-              if (data.id && data.id !== 'new') {
-                await updateDoc(doc(db, 'devotees', data.id), {
-                   whatsappSent: true,
-                   lastSentTime: serverTimestamp(),
-                   whatsappStatus: 'success'
-                });
-                data.whatsappSent = true;
-              }
-
-            } catch (err: any) {
-              lastError = err;
-              if (retries > 0) {
-                if (!silent) toast(`Retrying WhatsApp... ${retries} attempts left`, { icon: '🔄', duration: 2000 });
-                await new Promise(r => setTimeout(r, 2000));
-              }
-              retries--;
-            }
-          }
-
-          if (!success && lastError) {
-            throw lastError;
-          }
-        } catch (err: any) {
-          console.error('AutoSend Error:', err);
-          setWaStatus('failed');
-          const errMsg = err.message || 'Failed to send WhatsApp';
-          if (!silent) toast.error(errMsg);
-          
-          if (data?.id && data.id !== 'new') {
-             await updateDoc(doc(db, 'devotees', data.id), {
-                lastSentTime: serverTimestamp(),
-                whatsappStatus: 'failed',
-                whatsappError: errMsg
-             }).catch(console.error);
-          }
-        }
-      });
-    };
-
-    // Auto-trigger if fresh data and not already sent (optional logic can be added here)
-    useEffect(() => {
-        if (data?.receiptNo && data?.phone && !data?.phone.includes('_') && !isBlank && !data?.whatsappSent) {
-          // Auto-send on first load
-          autoSendWhatsApp(true); 
-        }
-    }, [data?.receiptNo]);
+    // Auto-WhatsApp removed as requested
 
     const shareSMS = () => {
       const msg = isAck ? 
@@ -330,39 +207,26 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
 
     return (
       <div className="w-full">
-        {/* ── Action Buttons ── */}
-        <div className="flex flex-wrap items-center justify-center gap-3 mb-5 print:hidden">
-          <button onClick={downloadPDF} disabled={!!loading} className={BtnClass('bg-red-600 text-white hover:bg-red-700')}>
-            {loading === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download PDF
-          </button>
-          <button onClick={downloadImage} disabled={!!loading} className={BtnClass('bg-amber-500 text-white hover:bg-amber-600')}>
-            {loading === 'img' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />} Save Image
-          </button>
-          <button onClick={shareWhatsApp} disabled={!!loading} className={BtnClass('bg-green-500 text-white hover:bg-green-600')}>
-            {loading === 'wa' ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} WhatsApp
-          </button>
-          
-          {/* ── NEW: Automated WhatsApp ── */}
-          <button 
-            onClick={() => autoSendWhatsApp()} 
-            disabled={!!loading || waStatus === 'sent'} 
-            className={BtnClass(
-              waStatus === 'sent' ? 'bg-emerald-600 text-white cursor-not-allowed' : 
-              waStatus === 'failed' ? 'bg-red-600 text-white hover:bg-red-700' : 
-              'bg-emerald-700 text-white hover:bg-emerald-800 border-2 border-emerald-400 ' + (waStatus === 'sending' ? 'animate-pulse' : '')
-            )}
-          >
-            {waStatus === 'sending' ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} 
-            {waStatus === 'sending' ? 'Sending...' : waStatus === 'sent' ? 'Sent ✅' : waStatus === 'failed' ? 'Failed ❌ (Retry)' : 'Official WhatsApp'}
-          </button>
-
-          <button onClick={shareSMS} className={BtnClass('bg-blue-600 text-white hover:bg-blue-700')}>
-            <Share2 size={16} /> SMS
-          </button>
-          <button onClick={() => window.print()} disabled={!!loading} className={BtnClass('bg-gray-700 text-white hover:bg-gray-800')}>
-            <Printer size={16} /> Print
-          </button>
-        </div>
+        {(!hideActions && !isPortal) && (
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-5 print:hidden">
+            <button onClick={downloadPDF} disabled={!!loading} className={BtnClass('bg-red-600 text-white hover:bg-red-700')}>
+              {loading === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download PDF
+            </button>
+            <button onClick={downloadImage} disabled={!!loading} className={BtnClass('bg-amber-500 text-white hover:bg-amber-600')}>
+              {loading === 'img' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />} Save Image
+            </button>
+            <button onClick={shareWhatsApp} disabled={!!loading} className={BtnClass('bg-green-500 text-white hover:bg-green-600')}>
+              {loading === 'wa' ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} WhatsApp
+            </button>
+            
+            <button onClick={shareSMS} className={BtnClass('bg-blue-600 text-white hover:bg-blue-700')}>
+              <Share2 size={16} /> SMS
+            </button>
+            <button onClick={() => window.print()} disabled={!!loading} className={BtnClass('bg-gray-700 text-white hover:bg-gray-800')}>
+              <Printer size={16} /> Print
+            </button>
+          </div>
+        )}
 
         {/* ── A4 Receipt Card ──
             794px ≈ A4 width at 96dpi.

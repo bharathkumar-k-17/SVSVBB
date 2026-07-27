@@ -1,11 +1,8 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
-import type { VIPGotram as VIPGotramType } from '../store/appStore';
-import {
-  addDoc, collection, doc, deleteDoc, updateDoc
-} from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { useVIPGotrams } from '../hooks/queries';
+import { supabase } from '../lib/supabase';
 import {
   Crown, Plus, Trash2, Edit2, Save, X,
   ChevronUp, ChevronDown, CheckCircle
@@ -22,8 +19,10 @@ interface EditState {
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export function VIPGotram() {
-  const { vipGotrams, currentYear } = useAppStore();
+  const { currentYear } = useAppStore();
   const { appUser } = useAuthStore();
+  const { data: vipGotramsData, isLoading, refetch } = useVIPGotrams(currentYear);
+  const vipGotrams = vipGotramsData || [];
 
   // ── Form state ──
   const [gotramInput, setGotramInput] = useState('');
@@ -63,20 +62,27 @@ export function VIPGotram() {
       const nextOrder = vipGotrams.length > 0
         ? Math.max(...vipGotrams.map(v => v.order)) + 1
         : 1;
-      await addDoc(collection(db, 'vipGotrams'), {
-        gotram: gotramInput.trim(),
-        familyMembers: members,
-        order: nextOrder,
-        source: 'Manual',
-        year: currentYear,
-        createdAt: Date.now()
-      });
+
+      const { error } = await supabase
+        .from('vip_gotrams')
+        .insert({
+          gotram: gotramInput.trim(),
+          family_members: members,
+          order: nextOrder,
+          source: 'Manual',
+          year: currentYear,
+          created_at: Date.now(),
+        });
+
+      if (error) throw error;
+
       setGotramInput('');
       setMembersInput('');
       showToast('✅ VIP Gotram saved successfully!');
-    } catch (err) {
+      refetch();
+    } catch (err: any) {
       console.error(err);
-      showToast('❌ Failed to save. Check connection.');
+      showToast(`❌ Failed to save: ${err.message || 'Check connection.'}`);
     } finally {
       setFormLoading(false);
     }
@@ -85,13 +91,24 @@ export function VIPGotram() {
   // ── Delete ──
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this VIP Gotram entry?')) return;
-    await deleteDoc(doc(db, 'vipGotrams', id));
-    showToast('🗑️ Entry deleted.');
+    try {
+      const { error } = await supabase
+        .from('vip_gotrams')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      showToast('🗑️ Entry deleted.');
+      refetch();
+    } catch (err: any) {
+      console.error(err);
+      showToast(`❌ Delete failed: ${err.message || 'Unknown error'}`);
+    }
   };
 
   // ── Start Edit ──
-  const startEdit = (vip: VIPGotramType) => {
-    setEditState({ id: vip.id, gotram: vip.gotram, familyMembersStr: vip.familyMembers.join(', ') });
+  const startEdit = (vip: any) => {
+    setEditState({ id: vip.id, gotram: vip.gotram, familyMembersStr: (vip.familyMembers || []).join(', ') });
   };
 
   // ── Save Edit ──
@@ -104,14 +121,21 @@ export function VIPGotram() {
     }
     setEditLoading(true);
     try {
-      await updateDoc(doc(db, 'vipGotrams', editState.id), {
-        gotram: editState.gotram.trim(),
-        familyMembers: editState.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean)
-      });
+      const { error } = await supabase
+        .from('vip_gotrams')
+        .update({
+          gotram: editState.gotram.trim(),
+          family_members: editState.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean),
+        })
+        .eq('id', editState.id);
+
+      if (error) throw error;
+
       setEditState(null);
       showToast('✅ Entry updated!');
-    } catch (err) {
-      showToast('❌ Update failed.');
+      refetch();
+    } catch (err: any) {
+      showToast(`❌ Update failed: ${err.message || 'Unknown error'}`);
     } finally {
       setEditLoading(false);
     }
@@ -126,10 +150,16 @@ export function VIPGotram() {
     const a = list[idx];
     const b = list[swapIdx];
 
-    await Promise.all([
-      updateDoc(doc(db, 'vipGotrams', a.id), { order: b.order }),
-      updateDoc(doc(db, 'vipGotrams', b.id), { order: a.order })
-    ]);
+    try {
+      await Promise.all([
+        supabase.from('vip_gotrams').update({ order: b.order }).eq('id', a.id),
+        supabase.from('vip_gotrams').update({ order: a.order }).eq('id', b.id),
+      ]);
+      refetch();
+    } catch (err) {
+      console.error('Reorder failed:', err);
+      showToast('❌ Reorder failed.');
+    }
   };
 
   const isVolunteer = appUser?.role === 'volunteer';
@@ -245,7 +275,9 @@ export function VIPGotram() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
-                {vipGotrams.map((vip, idx) => (
+                {isLoading ? (
+                  <tr><td colSpan={isVolunteer ? 4 : 5} className="px-6 py-8 text-center text-gray-500">Loading VIP Gotrams...</td></tr>
+                ) : vipGotrams.map((vip, idx) => (
                   <tr key={vip.id} className="hover:bg-yellow-50/30 transition-colors group">
 
                     {/* S.No */}
@@ -257,8 +289,8 @@ export function VIPGotram() {
                     <td className="px-3 py-3 text-sm font-bold text-yellow-800 min-w-[120px]">
                       {editState?.id === vip.id ? (
                         <TeluguInput
-                          value={editState.gotram}
-                          onChange={(val) => setEditState({ ...editState, gotram: val })}
+                          value={editState?.gotram || ''}
+                          onChange={(val) => setEditState(prev => prev ? { ...prev, gotram: val } : null)}
                           placeholder=""
                           required
                         />
@@ -272,14 +304,14 @@ export function VIPGotram() {
                       {editState?.id === vip.id ? (
                         <div className="space-y-1.5">
                            <TeluguInput
-                             value={editState.familyMembersStr}
-                             onChange={(val) => setEditState({ ...editState, familyMembersStr: val })}
+                             value={editState?.familyMembersStr || ''}
+                             onChange={(val) => setEditState(prev => prev ? { ...prev, familyMembersStr: val } : null)}
                              placeholder="name1, name2, name3..."
                            />
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-1">
-                          {vip.familyMembers.map((m, mi) => (
+                          {(vip.familyMembers || []).map((m: string, mi: number) => (
                             <span key={mi} className="bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-md text-xs text-gray-700">
                               {m}
                             </span>
@@ -364,7 +396,7 @@ export function VIPGotram() {
                   </tr>
                 ))}
 
-                {vipGotrams.length === 0 && (
+                {!isLoading && vipGotrams.length === 0 && (
                   <tr>
                     <td colSpan={isVolunteer ? 4 : 5} className="px-6 py-16 text-center">
                       <Crown className="h-12 w-12 text-yellow-300 mx-auto mb-3" />

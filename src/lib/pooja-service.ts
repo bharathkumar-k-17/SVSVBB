@@ -1,155 +1,249 @@
-import { 
-  collection, 
-  doc, 
-  onSnapshot, 
-  runTransaction, 
-  serverTimestamp, 
-  getDocs, 
-  query, 
-  where,
-  setDoc,
-  deleteField,
-  updateDoc,
-  getDoc,
-  Timestamp
-} from 'firebase/firestore';
-import { db } from './firebase';
-import { PoojaSlot, PoojaBookingData, PoojaFamilyBooking } from '../types/pooja';
+import { supabase } from './supabase';
+import {
+  PoojaSlot,
+  PoojaBookingData,
+  PoojaFamilyBooking
+} from '../types/pooja';
 
-const COLLECTION_NAME = 'pooja_slots';
+const SLOTS_TABLE = 'pooja_slots';
+const BOOKINGS_TABLE = 'pooja_bookings';
 
-// Listen for real-time updates
-export const subscribeToSlots = (callback: (slots: PoojaSlot[]) => void) => {
-  const q = collection(db, COLLECTION_NAME);
-  return onSnapshot(q, (snapshot) => {
-    const slots = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
+// Listen for real-time slot updates
+export const subscribeToSlots = (
+  year: number,
+  callback: (slots: PoojaSlot[]) => void
+) => {
+  const loadSlots = async () => {
+    const { data: slots, error: slotError } = await supabase
+      .from(SLOTS_TABLE)
+      .select('*')
+      .order('day')
+      .order('time');
+
+    if (slotError) {
+      console.error('Error loading slots:', slotError);
+      return;
+    }
+
+    const { data: bookings, error: bookingError } = await supabase
+      .from(BOOKINGS_TABLE)
+      .select('*')
+      .eq('year', year);
+
+    if (bookingError) {
+      console.error('Pooja bookings load error:', bookingError);
+      return;
+    }
+
+    const result = (slots || []).map(slot => ({
+      ...slot,
+      families: (bookings || []).filter(
+        booking => booking.slot_id === slot.id
+      ) as PoojaFamilyBooking[]
     })) as PoojaSlot[];
-    // Sort slots by day and then by time (morning first)
-    slots.sort((a, b) => {
+
+    result.sort((a, b) => {
       if (a.day !== b.day) return a.day - b.day;
       return a.time === 'morning' ? -1 : 1;
     });
-    callback(slots);
-  });
+
+    callback(result);
+  };
+
+  loadSlots();
+
+  const channel = supabase
+    .channel('pooja-realtime')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: SLOTS_TABLE
+      },
+      loadSlots
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: BOOKINGS_TABLE
+      },
+      loadSlots
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 };
 
-// Book a pooja slot for a family
-export const bookPoojaSlot = async (slotId: string, bookingData: PoojaBookingData) => {
-  const slotRef = doc(db, COLLECTION_NAME, slotId);
-  
+// Book pooja slot
+export const bookPoojaSlot = async (
+  slotId: string,
+  bookingData: PoojaBookingData,
+  year: number
+) => {
   try {
-    await runTransaction(db, async (transaction) => {
-      const slotDoc = await transaction.get(slotRef);
-      
-      if (!slotDoc.exists()) {
-        throw new Error("Slot does not exist!");
-      }
-      
-      const slot = slotDoc.data() as PoojaSlot;
-      const families = slot.families || [];
-      
-      const newFamily: PoojaFamilyBooking = {
-        id: Math.random().toString(36).substr(2, 9),
+    const bookingId =
+      crypto.randomUUID?.() ||
+      Math.random().toString(36).substring(2, 11);
+
+    const { data, error: bookingError } = await supabase
+      .from(BOOKINGS_TABLE)
+      .insert({
+        id: bookingId,
+        slot_id: slotId,
         name: bookingData.name,
         phone: bookingData.phone,
         status: 'active',
-        booked_at: Timestamp.now()
-      };
-      
-      transaction.update(slotRef, {
-        families: [...families, newFamily],
-        status: 'booked'
-      });
-    });
-    return { success: true };
-  } catch (error: any) {
-    console.error("Booking error:", error);
-    return { success: false, error: error.message };
-  }
-};
+        year: year
+      })
+      .select()
+      .single();
 
-// Cancel a specific family booking
-export const cancelFamilyBooking = async (slotId: string, familyId: string) => {
-  const slotRef = doc(db, COLLECTION_NAME, slotId);
-  try {
-    await runTransaction(db, async (transaction) => {
-      const slotDoc = await transaction.get(slotRef);
-      if (!slotDoc.exists()) throw new Error("Slot not found");
-      
-      const slot = slotDoc.data() as PoojaSlot;
-      const updatedFamilies = slot.families.map(f => 
-        f.id === familyId ? { ...f, status: 'cancelled' as const } : f
-      );
-      
-      const hasActive = updatedFamilies.some(f => f.status === 'active');
-      
-      transaction.update(slotRef, {
-        families: updatedFamilies,
-        status: hasActive ? 'booked' : 'available'
-      });
-    });
-    return { success: true };
-  } catch (error: any) {
-    console.error("Cancel booking error:", error);
-    return { success: false, error: error.message };
-  }
-};
-
-// Admin: Initialize 9 Days of Slots with Dates from settings
-export const initializePoojaSlots = async (force = false) => {
-  const settingsSnap = await getDoc(doc(db, 'settings', 'app'));
-  const festivalStartDate = settingsSnap.exists() ? settingsSnap.data().festivalStartDate : null;
-  
-  if (!festivalStartDate) {
-    throw new Error("Festival start date not configured in System Settings!");
-  }
-
-  const q = collection(db, COLLECTION_NAME);
-  const snapshot = await getDocs(q);
-  
-  // Cleanup Day 10, 11 etc if they exist
-  const deleteBatch = [];
-  snapshot.docs.forEach(doc => {
-    const data = doc.data();
-    if (data.day > 9) {
-      deleteBatch.push(updateDoc(doc.ref, { day: deleteField() })); // Or just delete the doc
+    if (bookingError) {
+      console.error('Pooja booking save error:', bookingError);
+      throw bookingError;
     }
-  });
 
-  if (!snapshot.empty && !force) {
-    console.log("Pooja slots already initialized.");
+    const { error: slotError } = await supabase
+      .from(SLOTS_TABLE)
+      .update({ status: 'booked' })
+      .eq('id', slotId);
+
+    if (slotError) {
+      console.error('Pooja slot update error:', slotError);
+      throw slotError;
+    }
+
+    return { success: true, data };
+  } catch (error: any) {
+    console.error('Pooja booking save error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+// Cancel family booking
+export const cancelFamilyBooking = async (
+  slotId: string,
+  familyId: string
+) => {
+  try {
+    const { error } = await supabase
+      .from(BOOKINGS_TABLE)
+      .update({ status: 'cancelled' })
+      .eq('id', familyId)
+      .eq('slot_id', slotId);
+
+    if (error) throw error;
+
+    const { data: activeBookings, error: activeError } =
+      await supabase
+        .from(BOOKINGS_TABLE)
+        .select('id')
+        .eq('slot_id', slotId)
+        .eq('status', 'active');
+
+    if (activeError) throw activeError;
+
+    const { error: slotError } = await supabase
+      .from(SLOTS_TABLE)
+      .update({
+        status:
+          activeBookings && activeBookings.length > 0
+            ? 'booked'
+            : 'available'
+      })
+      .eq('id', slotId);
+
+    if (slotError) throw slotError;
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Cancel booking error:', error);
+
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+// Initialize 9 days × morning/evening
+export const initializePoojaSlots = async (force = false) => {
+  const { data: settings, error: settingsError } = await supabase
+    .from('app_settings')
+    .select('festival_start_date')
+    .eq('id', 'app')
+    .single();
+
+  if (settingsError) throw settingsError;
+
+  const festivalStartDate = settings?.festival_start_date;
+
+  if (!festivalStartDate) {
+    throw new Error(
+      'Festival start date not configured in System Settings!'
+    );
+  }
+
+  const { data: existingSlots, error: slotError } = await supabase
+    .from(SLOTS_TABLE)
+    .select('id');
+
+  if (slotError) throw slotError;
+
+  if (existingSlots && existingSlots.length > 0 && !force) {
+    console.log('Pooja slots already initialized.');
     return;
   }
 
-  console.log("Initializing 9 pooja days...");
-  const batch = [];
-  
+  const slots = [];
+
   for (let day = 1; day <= 9; day++) {
-    const times: ('morning' | 'evening')[] = ['morning', 'evening'];
-    for (const time of times) {
-      const id = `day${day}_${time}`;
-      const slotRef = doc(db, COLLECTION_NAME, id);
-      batch.push(setDoc(slotRef, {
+    for (const time of ['morning', 'evening'] as const) {
+      slots.push({
+        id: `day${day}_${time}`,
         day,
         time,
-        families: [],
         status: 'available'
-      }, { merge: true }));
+      });
     }
   }
-  
-  await Promise.all(batch);
-  console.log("Slots initialized successfully for 9 days.");
+
+  const { error } = await supabase
+    .from(SLOTS_TABLE)
+    .upsert(slots);
+
+  if (error) throw error;
+
+  console.log('Slots initialized successfully for 9 days.');
 };
 
 export const updateFestivalStartDate = async (date: string) => {
-  const settingsRef = doc(db, 'settings', 'app');
-  await setDoc(settingsRef, { festivalStartDate: date }, { merge: true });
+  const { error } = await supabase
+    .from('app_settings')
+    .update({
+      festival_start_date: date
+    })
+    .eq('id', 'app');
+
+  if (error) throw error;
 };
 
 export const getFestivalStartDate = async () => {
-  const snap = await getDoc(doc(db, 'settings', 'app'));
-  return snap.exists() ? snap.data().festivalStartDate : null;
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('festival_start_date')
+    .eq('id', 'app')
+    .single();
+
+  if (error) throw error;
+
+  return data?.festival_start_date ?? null;
 };

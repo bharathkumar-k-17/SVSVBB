@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
-import { addDoc, collection, doc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { useCulturalEvents } from '../hooks/queries';
+import { supabase } from '../lib/supabase';
 import { Music, Plus, Trash2, Edit } from 'lucide-react';
+import { Skeleton } from '../components/ui/Skeleton';
 
 export function CulturalActivities() {
-  const { culturalEvents, currentYear } = useAppStore();
+  const { currentYear } = useAppStore();
   const { appUser } = useAuthStore();
+  const { data: culturalEventsData, isLoading: queryLoading, refetch } = useCulturalEvents(currentYear);
+  const culturalEvents = culturalEventsData || [];
+  
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -22,25 +26,41 @@ export function CulturalActivities() {
     setLoading(true);
     try {
       if (editingId) {
-        await updateDoc(doc(db, 'culturalEvents', editingId), {
-          ...formData,
-          year: currentYear,
-          updatedAt: Date.now()
-        });
+        const { error } = await supabase
+          .from('cultural_events')
+          .update({
+            game_name: formData.gameName,
+            category: formData.category,
+            winner1: formData.winner1,
+            winner2: formData.winner2,
+            year: currentYear,
+            updated_at: Date.now(),
+          })
+          .eq('id', editingId);
+
+        if (error) throw error;
         setEditingId(null);
       } else {
-        await addDoc(collection(db, 'culturalEvents'), {
-          ...formData,
-          year: currentYear,
-          addedBy: appUser?.uid || 'admin',
-          addedByName: appUser?.name || 'Admin',
-          createdAt: Date.now()
-        });
+        const { error } = await supabase
+          .from('cultural_events')
+          .insert({
+            game_name: formData.gameName,
+            category: formData.category,
+            winner1: formData.winner1,
+            winner2: formData.winner2,
+            year: currentYear,
+            added_by: appUser?.email || 'admin',
+            added_by_name: appUser?.name || 'Admin',
+            created_at: Date.now(),
+          });
+
+        if (error) throw error;
       }
       setFormData({ gameName: '', category: '', winner1: '', winner2: '' });
-    } catch (err) {
+      refetch();
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to save event');
+      alert(`Failed to save event: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -48,15 +68,27 @@ export function CulturalActivities() {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this event?')) {
-      await deleteDoc(doc(db, 'culturalEvents', id));
-      if (editingId === id) {
-        setEditingId(null);
-        setFormData({ gameName: '', category: '', winner1: '', winner2: '' });
+      try {
+        const { error } = await supabase
+          .from('cultural_events')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+
+        if (editingId === id) {
+          setEditingId(null);
+          setFormData({ gameName: '', category: '', winner1: '', winner2: '' });
+        }
+        refetch();
+      } catch (err: any) {
+        console.error(err);
+        alert(`Failed to delete event: ${err.message || 'Unknown error'}`);
       }
     }
   };
 
-  const handleEdit = (event: typeof culturalEvents[0]) => {
+  const handleEdit = (event: any) => {
     setEditingId(event.id);
     setFormData({
       gameName: event.gameName,
@@ -181,7 +213,7 @@ export function CulturalActivities() {
                 {!isVolunteer && <th className="px-6 py-3 text-center text-sm font-semibold text-gray-900">Actions</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 bg-white">
+              <tbody className="divide-y divide-gray-100 bg-white">
               {culturalEvents.map((event, idx) => (
                 <tr key={event.id} className="hover:bg-orange-50/30 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">{idx + 1}</td>

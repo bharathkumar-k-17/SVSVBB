@@ -11,9 +11,9 @@ import { useAuthStore } from '../store/authStore';
 const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
 
 export function AppLock() {
-  const { user } = useAuthStore();
+  const { supabaseUser } = useAuthStore();
   const [config, setConfig] = useState<AppLockConfig>(() => loadAppLockConfig());
-  const [locked, setLocked] = useState(() => Boolean(user && loadAppLockConfig().enabled));
+  const [locked, setLocked] = useState(() => Boolean(supabaseUser && loadAppLockConfig().enabled));
   const [pin, setPin] = useState('');
   const [pattern, setPattern] = useState<number[]>([]);
   const [error, setError] = useState('');
@@ -27,7 +27,7 @@ export function AppLock() {
     const syncConfig = () => {
       const nextConfig = loadAppLockConfig();
       setConfig(nextConfig);
-      if (user && nextConfig.enabled) setLocked(true);
+      if (supabaseUser && nextConfig.enabled) setLocked(true);
     };
     window.addEventListener('app-lock-config-change', syncConfig);
     window.addEventListener('storage', syncConfig);
@@ -35,20 +35,20 @@ export function AppLock() {
       window.removeEventListener('app-lock-config-change', syncConfig);
       window.removeEventListener('storage', syncConfig);
     };
-  }, [user]);
+  }, [supabaseUser]);
 
   useEffect(() => {
-    if (user && config.enabled) {
+    if (supabaseUser && config.enabled) {
       setLocked(true);
       setPin('');
       setPattern([]);
     } else {
       setLocked(false);
     }
-  }, [user?.uid, config.enabled]);
+  }, [supabaseUser?.id, config.enabled]);
 
   useEffect(() => {
-    if (!user || !config.enabled || locked) return;
+    if (!supabaseUser || !config.enabled || locked) return;
 
     let timeoutId = window.setTimeout(() => setLocked(true), config.inactivityMinutes * 60 * 1000);
     const resetTimer = () => {
@@ -62,7 +62,7 @@ export function AppLock() {
       window.clearTimeout(timeoutId);
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
     };
-  }, [config.enabled, config.inactivityMinutes, locked, user]);
+  }, [config.enabled, config.inactivityMinutes, locked, supabaseUser]);
 
   const unlock = useCallback(() => {
     setLocked(false);
@@ -132,7 +132,7 @@ export function AppLock() {
     return 'PIN';
   }, [config.method]);
 
-  if (!user || !config.enabled || !locked) return null;
+  if (!supabaseUser || !config.enabled || !locked) return null;
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-stone-950/85 p-5 backdrop-blur-xl">
