@@ -110,6 +110,7 @@ export function PortalPooja() {
                         eveningSlot={slotsObj.evening}
                         onBook={setSelectedSlot}
                         isAdmin={false}
+                        isPublicPortal={true}
                         onCancelFamily={() => {}}
                         onShareFamily={() => {}}
                         onReminderFamily={() => {}}

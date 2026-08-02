@@ -16,10 +16,11 @@ interface SlotCardProps {
   isMorningPast?: boolean;
   isEveningPast?: boolean;
   festivalStartDate?: string | null;
+  isPublicPortal?: boolean;
 }
 
 const SlotCard: React.FC<SlotCardProps> = ({ 
-  day, morningSlot, eveningSlot, onBook, isAdmin, onCancelFamily, onShareFamily, onReminderFamily, isToday, isMorningPast, isEveningPast, festivalStartDate 
+  day, morningSlot, eveningSlot, onBook, isAdmin, onCancelFamily, onShareFamily, onReminderFamily, isToday, isMorningPast, isEveningPast, festivalStartDate, isPublicPortal 
 }) => {
 
   const calculateDate = (festivalDay: number) => {
@@ -54,7 +55,7 @@ const SlotCard: React.FC<SlotCardProps> = ({
                 {timeLabel}
                 </span>
             </div>
-            {isBooked && (
+            {isBooked && !isPublicPortal && (
                 <div className="bg-white/20 backdrop-blur-md text-white text-[8px] font-black px-2 py-0.5 rounded-full border border-white/30 flex items-center gap-1">
                     <Zap size={8} className="fill-current" /> {activeFamilies.length} FAMILIES
                 </div>
@@ -63,7 +64,16 @@ const SlotCard: React.FC<SlotCardProps> = ({
           
           <div className="space-y-2 relative z-10">
             {isBooked ? (
-              activeFamilies.map((family) => (
+              isPublicPortal ? (
+                <div className="flex flex-col items-center justify-center p-4 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
+                    <span className="text-white font-black tracking-widest text-[12px]">BOOKED</span>
+                  </div>
+                  <span className="text-white/80 text-[10px] font-bold">🛕 Reserved</span>
+                </div>
+              ) : (
+                activeFamilies.map((family) => (
                 <div key={family.id} className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20 group/family hover:bg-white/20 transition-all duration-300">
                   <div className="flex justify-between items-center">
                     <div>
@@ -111,6 +121,7 @@ const SlotCard: React.FC<SlotCardProps> = ({
                   </div>
                 </div>
               ))
+            )
             ) : (
               <div className="flex flex-col items-center py-4 border-2 border-dashed border-white/30 rounded-2xl bg-white/10 relative overflow-hidden">
                   <p className="text-[8px] font-black text-white tracking-widest uppercase">Available for Booking</p>

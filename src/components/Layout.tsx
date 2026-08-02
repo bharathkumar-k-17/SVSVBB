@@ -12,6 +12,7 @@ import {
 import { InstallPrompt } from './InstallPrompt';
 import { AppLock } from './AppLock';
 import { subscribeToUnreadCount } from '../lib/notifications';
+import { useGlobalLogo } from '../hooks/useGlobalLogo';
 
 const BASE_NAV_ITEMS = [
   { path: '/dashboard',  label: 'Dashboard',          icon: LayoutDashboard },
@@ -27,6 +28,7 @@ const BASE_NAV_ITEMS = [
 
 export function Layout() {
   const { appUser, signOut } = useAuthStore();
+  const logoSrc = useGlobalLogo();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -99,7 +101,7 @@ export function Layout() {
         {/* Logo */}
         <div className="p-5 flex flex-col items-center justify-center border-b border-orange-100 bg-gradient-to-b from-orange-50 to-white">
           <img 
-            src="/logo.jpg" 
+            src={logoSrc} 
             alt="SVBB Logo" 
             className="w-16 h-16 rounded-full shadow-lg mb-3 ring-4 ring-orange-100 object-cover bg-white"
           />
@@ -155,7 +157,7 @@ export function Layout() {
               >
                 <X size={16} />
               </button>
-              <img src="/logo.jpg" alt="Logo" className="w-12 h-12 rounded-full shadow-lg mb-2 object-cover bg-white" />
+              <img src={logoSrc} alt="Logo" className="w-12 h-12 rounded-full shadow-lg mb-2 object-cover bg-white" />
               <h1 className="text-xs font-bold text-gray-700 text-center">SVSVBB</h1>
             </div>
             <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">

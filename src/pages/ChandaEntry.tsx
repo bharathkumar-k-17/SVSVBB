@@ -6,13 +6,16 @@ import { supabase } from '../lib/supabase';
 import { QrCode, Banknote, Save, HeartHandshake, Crown } from 'lucide-react';
 import { Receipt } from '../components/Receipt';
 import { QRCodeSVG } from 'qrcode.react';
-import { TeluguInput } from '../components/TeluguInput';
+import { formatCurrency } from '../lib/utils';
 import { format } from 'date-fns';
+import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from '../lib/templates';
+import { TeluguInput } from '../components/TeluguInput';
 import { MaskedPhoneInput } from '../components/MaskedPhoneInput';
 import { createAdminNotification } from '../lib/notifications';
-import { maskPhoneNumber, normalizePhoneDigits, getWhatsAppNumber } from '../lib/privacy';
+import { maskPhoneNumber, normalizePhoneDigits } from '../lib/privacy';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { shareReceiptWhatsApp } from '../lib/whatsapp';
 
 interface ChandaEntryProps {
   isPortal?: boolean;
@@ -314,39 +317,10 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
     if (!lastSavedDevotee?.phone || !lastSavedDevotee?.id) return;
     setLoading(true);
     try {
-      const targetPhone = getWhatsAppNumber(lastSavedDevotee.phone);
-      if (!targetPhone) {
-        alert("Invalid phone number for WhatsApp.");
-        return;
-      }
-
       const baseUrl = window.location.origin;
       const receiptUrl = `${baseUrl}/portal/receipt/${lastSavedDevotee.id}`;
       
-      const paymentMsg = lastSavedDevotee.paymentMode === 'UPI' && lastSavedDevotee.paidAmount === 0 
-        ? 'మీ చందా నమోదు చేయబడింది.' 
-        : 'మీ చందా విజయవంతంగా నమోదు చేయబడింది.';
-        
-      const text = `🙏 నమస్కారం 🙏
-
-శ్రీ వరసిద్ధి వినాయక భక్త బృందం
-
-${paymentMsg}
-
-పేరు: ${lastSavedDevotee.name}
-రసీదు నం: ${lastSavedDevotee.receiptNo}
-మొత్తం: ₹${lastSavedDevotee.totalAmount}
-చెల్లింపు విధానం: ${lastSavedDevotee.paymentMode}
-
-రసీదు చూడటానికి / డౌన్లోడ్ చేసుకోవడానికి:
-${receiptUrl}
-
-🙏 ధన్యవాదాలు 🙏`;
-
-      const waLink = `https://wa.me/${targetPhone}?text=${encodeURIComponent(text)}`;
-      console.log('Target Phone:', targetPhone, 'WA Link:', waLink);
-      window.open(waLink, '_blank');
-      
+      shareReceiptWhatsApp(lastSavedDevotee, receiptUrl, appSettings?.chanda_confirmation_template);
     } catch (e) {
       console.error("WhatsApp share error:", e);
     } finally {
@@ -360,12 +334,25 @@ ${receiptUrl}
     const baseUrl = window.location.origin;
     const receiptUrl = `${baseUrl}/portal/receipt/${lastSavedDevotee.id}`;
     
-    const paymentMsg = lastSavedDevotee.paymentMode === 'UPI' && lastSavedDevotee.paidAmount === 0 
-      ? `SVSVBB Chanda recorded.`
-      : `SVSVBB Chanda ₹${lastSavedDevotee.totalAmount} received.`;
-      
-    const text = `🙏 నమస్కారం 🙏\n${paymentMsg}\nReceipt: ${lastSavedDevotee.receiptNo}\nReceipt: ${receiptUrl}\nధన్యవాదాలు 🙏`;
-    const smsLink = `sms:+91${normalizedPhone}?body=${encodeURIComponent(text)}`;
+    const dateValue = lastSavedDevotee.date || lastSavedDevotee.createdAt;
+    const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
+    const amount = lastSavedDevotee.totalAmount || lastSavedDevotee.paidAmount || 0;
+
+    const payload = {
+      name: lastSavedDevotee.name || '',
+      receiptNo: lastSavedDevotee.receiptNo || '',
+      date: formattedDate,
+      amount: amount,
+      receiptLink: receiptUrl,
+      festivalYear: new Date().getFullYear().toString(),
+    };
+
+    const text = hydrateTemplate(appSettings?.chanda_confirmation_template || DEFAULT_CHANDA_CONFIRMATION, payload);
+    let encodedText = encodeURIComponent(text);
+    if (receiptUrl) {
+      encodedText = encodedText.replace(encodeURIComponent(receiptUrl), receiptUrl);
+    }
+    const smsLink = `sms:+91${normalizedPhone}?body=${encodedText}`;
     window.open(smsLink, '_self');
   };
 

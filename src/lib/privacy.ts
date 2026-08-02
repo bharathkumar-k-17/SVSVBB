@@ -12,20 +12,16 @@ export const maskPhoneNumber = (value?: string | null) => {
 };
 
 export const getWhatsAppNumber = (phone?: string | null): string => {
-  const digits = (phone || '').replace(/\D/g, '');
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
   
-  if (digits.length === 10) {
-    return `91${digits}`;
-  } else if (digits.length === 12 && digits.startsWith('91')) {
-    return digits;
+  if (!digits) return '';
+
+  const last10 = digits.slice(-10);
+  
+  if (last10.length === 10) {
+    return `91${last10}`;
   }
   
-  // Return empty string if invalid length
   return '';
-};
-
-export const buildWhatsAppUrl = (phone: string | undefined | null, message: string) => {
-  const target = getWhatsAppNumber(phone);
-  if (!target) return '';
-  return `https://wa.me/${target}?text=${encodeURIComponent(message)}`;
 };

@@ -4,10 +4,12 @@ import { format } from 'date-fns';
 import { BellRing, BookOpen, CalendarCheck2, MessageCircle } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { A4ExportSystem } from '../components/A4ExportSystem';
-import { buildWhatsAppUrl, maskPhoneNumber } from '../lib/privacy';
+import { maskPhoneNumber } from '../lib/privacy';
+import { openWhatsAppChat } from '../lib/whatsapp';
 import type { PoojaSlot } from '../types/pooja';
 import { supabase } from '../lib/supabase';
-import { useRecordsData } from '../hooks/queries';
+import { useRecordsData, useAppSettings } from '../hooks/queries';
+import { hydrateTemplate, DEFAULT_CHANDA_PENDING, DEFAULT_POOJA_REMINDER } from '../lib/templates';
 
 type RecordTab = 'devotees' | 'vip' | 'expenses' | 'cultural' | 'volunteer' | 'pooja';
 
@@ -61,6 +63,7 @@ export function Records() {
   const [sortBy, setSortBy] = useState<'latest' | 'amount' | 'name-asc' | 'name-desc'>('latest');
   
   const { data: recordsData } = useRecordsData(currentYear);
+  const { data: appSettings } = useAppSettings();
   
   const devotees = recordsData?.devotees || [];
   const expenses = recordsData?.expenses || [];
@@ -210,8 +213,14 @@ export function Records() {
       triggerReminder: Date.now(),
       reminderType: devotee.paymentStatus,
     }).eq('id', devotee.id);
-    const msg = `SVSVBB Chanda Reminder\nDear ${devotee.name},\nPending Amount: ₹${devotee.pendingAmount}\nReceipt No: ${devotee.receiptNo || 'Pending'}`;
-    window.open(buildWhatsAppUrl(devotee.phone, msg), '_blank');
+
+    const payload = {
+      name: devotee.name || '',
+      pendingAmount: devotee.pendingAmount || 0,
+      festivalYear: currentYear.toString(),
+    };
+    const msg = hydrateTemplate(appSettings?.chanda_pending_template || DEFAULT_CHANDA_PENDING, payload);
+    openWhatsAppChat(devotee.phone, msg);
   };
 
   const sendReminder = async (slot: any) => {
@@ -219,8 +228,16 @@ export function Records() {
     const activeFamily = (slot.families || []).find((f: any) => f.status === 'active');
     const familyName = activeFamily?.name || '-';
     const familyPhone = activeFamily?.phone || '';
-    const msg = `SVSVBB Pooja Booking Reminder\nFamily: ${familyName}\nSlot: Day ${slot.day} ${slot.time}`;
-    window.open(buildWhatsAppUrl(familyPhone, msg), '_blank');
+    
+    const payload = {
+      name: familyName,
+      poojaName: 'Pooja',
+      date: `Day ${slot.day}`,
+      time: slot.time || '',
+      festivalYear: currentYear.toString(),
+    };
+    const msg = hydrateTemplate(appSettings?.pooja_reminder_template || DEFAULT_POOJA_REMINDER, payload);
+    openWhatsAppChat(familyPhone, msg);
   };
 
   return (

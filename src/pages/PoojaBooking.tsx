@@ -13,8 +13,11 @@ import BookingModal from '../components/pooja/BookingModal';
 import { useAuthStore } from '../store/authStore';
 import { useAppStore } from '../store/appStore';
 import { toast } from 'react-hot-toast';
-import { buildWhatsAppUrl, maskPhoneNumber } from '../lib/privacy';
+import { maskPhoneNumber } from '../lib/privacy';
+import { openWhatsAppChat } from '../lib/whatsapp';
+import { hydrateTemplate, DEFAULT_POOJA_CONFIRMATION, DEFAULT_POOJA_REMINDER } from '../lib/templates';
 import { supabase } from '../lib/supabase';
+import { useAppSettings } from '../hooks/queries';
 import { Calendar, CalendarDays, Plus, Settings2 } from 'lucide-react';
 
 const SLOTS_PER_DAY = 18;
@@ -27,6 +30,7 @@ const PoojaBooking: React.FC = () => {
   const [festivalStartDate, setFestivalStartDate] = useState<string | null>(null);
   const { appUser } = useAuthStore();
   const currentYear = useAppStore(state => state.currentYear);
+  const { data: appSettings } = useAppSettings();
 
   const isSuperAdmin = appUser?.role === 'superadmin';
   const isAdmin = appUser?.role === 'admin' || isSuperAdmin;
@@ -73,8 +77,15 @@ const PoojaBooking: React.FC = () => {
       // Automatically trigger sharing
       if (selectedSlot) {
         const dateStr = calculateDateStr(selectedSlot.day);
-        const message = `*SVSVBB Pooja Confirmation*\n\n🙏 Namaste ${data.name} garu,\n\nYour Pooja slot has been confirmed!\n📅 *Date:* ${dateStr}\n⏰ *Time:* ${selectedSlot.time === 'morning' ? '08:00 AM' : '06:00 PM'}\n🚩 *Day:* ${selectedSlot.day}\n\n_Please arrive 15 mins early._`;
-        window.open(buildWhatsAppUrl(data.phone, message), '_blank');
+        const payload = {
+          name: data.name || '',
+          poojaName: 'Pooja',
+          date: dateStr,
+          time: selectedSlot.time === 'morning' ? '08:00 AM' : '06:00 PM',
+          festivalYear: currentYear.toString(),
+        };
+        const message = hydrateTemplate(appSettings?.pooja_confirmation_template || DEFAULT_POOJA_CONFIRMATION, payload);
+        openWhatsAppChat(data.phone, message);
       }
 
       setSelectedSlot(null);
@@ -103,8 +114,15 @@ const PoojaBooking: React.FC = () => {
 
   const handleShareFamily = (slot: PoojaSlot, family: PoojaFamilyBooking) => {
     const dateStr = calculateDateStr(slot.day);
-    const message = `*SVSVBB Pooja Confirmation*\n\n🙏 Namaste ${family.name} garu,\n\nYour Pooja slot has been confirmed!\n📅 *Date:* ${dateStr}\n⏰ *Time:* ${slot.time === 'morning' ? '08:00 AM' : '06:00 PM'}\n🚩 *Day:* ${slot.day}\n\n_Please arrive 15 mins early._`;
-    window.open(buildWhatsAppUrl(family.phone, message), '_blank');
+    const payload = {
+      name: family.name || '',
+      poojaName: 'Pooja',
+      date: dateStr,
+      time: slot.time === 'morning' ? '08:00 AM' : '06:00 PM',
+      festivalYear: currentYear.toString(),
+    };
+    const message = hydrateTemplate(appSettings?.pooja_confirmation_template || DEFAULT_POOJA_CONFIRMATION, payload);
+    openWhatsAppChat(family.phone, message);
   };
 
   const handleReminderFamily = async (slot: PoojaSlot, family: PoojaFamilyBooking) => {
@@ -117,9 +135,16 @@ const PoojaBooking: React.FC = () => {
     }).eq('id', slot.id);
 
     const dateStr = calculateDateStr(slot.day);
-    const message = `*SVSVBB Pooja Reminder*\n\n🙏 Namaste ${family.name} garu,\n\nThis is a reminder for your Pooja tomorrow!\n📅 *Date:* ${dateStr}\n⏰ *Time:* ${slot.time === 'morning' ? '08:00 AM' : '06:00 PM'}\n\n_See you at the Mandapam!_`;
+    const payload = {
+      name: family.name || '',
+      poojaName: 'Pooja',
+      date: dateStr,
+      time: slot.time === 'morning' ? '08:00 AM' : '06:00 PM',
+      festivalYear: currentYear.toString(),
+    };
+    const message = hydrateTemplate(appSettings?.pooja_reminder_template || DEFAULT_POOJA_REMINDER, payload);
     
-    window.open(buildWhatsAppUrl(family.phone, message), '_blank');
+    openWhatsAppChat(family.phone, message);
     toast.success(`Reminder sent to ${family.name}`);
   };
 

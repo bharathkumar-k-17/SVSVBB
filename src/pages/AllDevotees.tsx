@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
-import { useDevotees } from '../hooks/queries';
+import { useDevotees, useAppSettings } from '../hooks/queries';
 import { useDebounce } from '../hooks/useDebounce';
 import { Search, Filter, Trash2, Edit, Plus, Crown, MessageCircle, MessageSquare, ArrowUpDown, BellRing, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PaymentModal } from '../components/PaymentModal';
 import { EditDevoteeModal } from '../components/EditDevoteeModal';
 import { supabase } from '../lib/supabase';
-import { maskPhoneNumber, getWhatsAppNumber } from '../lib/privacy';
+import { maskPhoneNumber } from '../lib/privacy';
+import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from '../lib/templates';
+import { shareReceiptWhatsApp } from '../lib/whatsapp';
+import { format } from 'date-fns';
 import { Skeleton } from '../components/ui/Skeleton';
 
 type SortOption = 'LATEST' | 'AMOUNT_DESC';
@@ -43,6 +46,8 @@ export function AllDevotees() {
     filter,
     sortBy
   );
+
+  const { data: appSettings } = useAppSettings();
 
   const devotees = devoteesData?.data || [];
   const totalCount = devoteesData?.count || 0;
@@ -92,38 +97,37 @@ export function AllDevotees() {
 
   const handleWhatsAppShare = (dev: any) => {
     try {
-      const targetPhone = getWhatsAppNumber(dev.phone);
-      
-      if (!targetPhone) {
-        alert("Invalid or missing phone number for WhatsApp sharing.");
-        return;
-      }
-
       const baseUrl = window.location.origin;
       const receiptUrl = `${baseUrl}/portal/receipt/${dev.id}`;
       
-      const paymentMsg = dev.paymentMode === 'UPI' && dev.paidAmount === 0 
-        ? 'మీ చందా నమోదు చేయబడింది.' 
-        : 'మీ చందా విజయవంతంగా నమోదు చేయబడింది.';
-        
-      const text = `🙏 నమస్కారం 🙏\n\nశ్రీ వరసిద్ధి వినాయక భక్త బృందం\n\n${paymentMsg}\n\nపేరు: ${dev.name}\nరసీదు నం: ${dev.receiptNo}\nమొత్తం: ₹${dev.totalAmount}\nచెల్లింపు విధానం: ${dev.paymentMode || 'Cash'}\n\nరసీదు చూడటానికి / డౌన్లోడ్ చేసుకోవడానికి:\n${receiptUrl}\n\n🙏 ధన్యవాదాలు 🙏`;
-
-      const waLink = `https://wa.me/${targetPhone}?text=${encodeURIComponent(text)}`;
-      console.log('Target Phone:', targetPhone, 'WA Link:', waLink);
-      window.open(waLink, '_blank');
-      
+      shareReceiptWhatsApp(dev, receiptUrl, appSettings?.chanda_confirmation_template);
     } catch (e) {
       console.error("WhatsApp share error:", e);
     }
   };
 
   const handleSMSShare = (dev: any) => {
-    const isAck = dev.paidAmount === 0;
-    const msg = isAck ? 
-      `శ్రీ వరసిద్ధి వినాయక భక్త బృందం - ${currentYear}\n\nపేరు: ${dev.name}\nమొత్తం: ₹${dev.totalAmount}\n\nమీ వివరాలు నమోదు చేయబడ్డాయి.\nచెల్లింపు పెండింగ్లో ఉంది.\n\nధన్యవాదాలు 🙏` :
-      `శ్రీ వరసిద్ధి వినాయక భక్త బృందం - ${currentYear}\n\nపేరు: ${dev.name}\nచెల్లించిన మొత్తం: ₹${dev.paidAmount}\nరసీదు నం: ${dev.receiptNo}\n${dev.pendingAmount > 0 ? `\nమిగిలిన మొత్తం: ₹${dev.pendingAmount}\nదయచేసి చెల్లించండి.\n` : ''}\nధన్యవాదాలు 🙏`;
+    const baseUrl = window.location.origin;
+    const receiptUrl = `${baseUrl}/portal/receipt/${dev.id}`;
+    const dateValue = dev.date || dev.createdAt;
+    const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
+    const amount = dev.totalAmount || dev.paidAmount || 0;
 
-    window.open(`sms:${dev.phone}?body=${encodeURIComponent(msg)}`, '_blank');
+    const payload = {
+      name: dev.name || '',
+      receiptNo: dev.receiptNo || '',
+      date: formattedDate,
+      amount: amount,
+      receiptLink: receiptUrl,
+      festivalYear: currentYear.toString(),
+    };
+
+    const text = hydrateTemplate(appSettings?.chanda_confirmation_template || DEFAULT_CHANDA_CONFIRMATION, payload);
+    let encodedText = encodeURIComponent(text);
+    if (receiptUrl) {
+      encodedText = encodedText.replace(encodeURIComponent(receiptUrl), receiptUrl);
+    }
+    window.open(`sms:${dev.phone}?body=${encodedText}`, '_blank');
   };
 
   const handleSendReminder = async (dev: any) => {

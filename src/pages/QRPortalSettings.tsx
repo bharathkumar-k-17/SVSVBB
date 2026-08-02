@@ -6,9 +6,11 @@ import { FeedbackQuestionType, FeedbackQuestion } from '../types';
 import toast from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePortalSettings, useFeedbackQuestions } from '../hooks/queries';
+import { useGlobalLogo } from '../hooks/useGlobalLogo';
 
 export function QRPortalSettings() {
   const queryClient = useQueryClient();
+  const logoSrc = useGlobalLogo();
   const { data: settings, isLoading: isSettingsLoading } = usePortalSettings();
   const { data: questions = [], isLoading: isQuestionsLoading } = useFeedbackQuestions();
   const isLoading = isSettingsLoading || isQuestionsLoading;
@@ -337,7 +339,7 @@ export function QRPortalSettings() {
           <div className="flex flex-col items-center justify-center py-10 space-y-6">
             <h3 className="font-bold text-xl text-gray-800">Scan to Open Portal</h3>
             <div className="p-4 bg-white border-4 border-orange-100 rounded-2xl shadow-lg">
-                <QRCodeSVG id="qr-svg" value={portalUrl} size={256} fgColor="#111827" bgColor="#ffffff" level="Q" imageSettings={{ src: "/logo.jpg", x: undefined, y: undefined, height: 40, width: 40, excavate: true }} />
+                <QRCodeSVG id="qr-svg" value={portalUrl} size={256} fgColor="#111827" bgColor="#ffffff" level="Q" imageSettings={{ src: logoSrc, x: undefined, y: undefined, height: 40, width: 40, excavate: true }} />
             </div>
             <p className="text-gray-500 text-sm font-medium break-all">{portalUrl}</p>
             <div className="flex gap-4">

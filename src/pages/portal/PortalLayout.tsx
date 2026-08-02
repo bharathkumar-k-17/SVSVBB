@@ -2,9 +2,11 @@ import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { usePortalStore } from '../../store/portalStore';
 import { MapPin, Phone, MessageCircle, RefreshCw } from 'lucide-react';
+import { useGlobalLogo } from '../../hooks/useGlobalLogo';
 
 export function PortalLayout() {
   const { settings, isLoading, fetchSettings } = usePortalStore();
+  const logoSrc = useGlobalLogo();
 
   useEffect(() => {
     fetchSettings();
@@ -30,7 +32,7 @@ export function PortalLayout() {
             {settings.temple_image_url ? (
                 <img src={settings.temple_image_url} alt="Temple" className="w-full h-full object-cover rounded-full" />
             ) : (
-                <img src="/logo.jpg" alt="SVBB Logo" className="w-full h-full object-cover rounded-full" />
+                <img src={logoSrc} alt="SVBB Logo" className="w-full h-full object-cover rounded-full" />
             )}
         </div>
         <h1 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-500">

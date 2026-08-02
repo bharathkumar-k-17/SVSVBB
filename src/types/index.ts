@@ -229,3 +229,16 @@ export interface PublicChandaRequest {
   created_at: number;
   updated_at: string;
 }
+
+export interface AppSettings {
+  id: string;
+  system_access: boolean;
+  upi_id?: string;
+  festival_start_date?: string;
+  logo_url?: string;
+  chanda_confirmation_template?: string;
+  chanda_pending_template?: string;
+  pooja_confirmation_template?: string;
+  pooja_reminder_template?: string;
+  festival_greeting_template?: string;
+}

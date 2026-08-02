@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import {
   Users, Search, CheckCircle2, XCircle, ArrowUpDown,
   Trash2, Shield, Clock, Loader2, UserCheck, UserX,
-  ToggleLeft, ToggleRight, Settings
+  ToggleLeft, ToggleRight, Settings, KeyRound
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
@@ -45,6 +45,7 @@ export function UserManagement() {
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<ModalAction>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState<string | null>(null);
 
   // ── Filtered Users ──────────────────────────────────────────────────────────
   const filteredUsers = users.filter(u => {
@@ -159,6 +160,21 @@ export function UserManagement() {
       toast.error(err.message || 'Failed to delete user');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (user: UserRecord) => {
+    setResettingPassword(user.id);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+        redirectTo: window.location.origin + '/reset-password',
+      });
+      if (error) throw error;
+      toast.success(`Password reset email sent to ${user.email} 📧`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send reset email');
+    } finally {
+      setResettingPassword(null);
     }
   };
 
@@ -373,6 +389,16 @@ export function UserManagement() {
                     id={`btn-delete-${user.email}`}
                   >
                     <Trash2 size={14} /> Delete
+                  </button>
+
+                  <button
+                    onClick={() => handleResetPassword(user)}
+                    disabled={resettingPassword === user.id}
+                    className="um-action-btn bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    id={`btn-reset-${user.email}`}
+                  >
+                    {resettingPassword === user.id ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />} 
+                    Reset Pwd
                   </button>
                 </div>
               )}

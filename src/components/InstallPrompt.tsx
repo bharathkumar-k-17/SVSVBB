@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Download } from 'lucide-react';
+import { useGlobalLogo } from '../hooks/useGlobalLogo';
 
 export function InstallPrompt() {
+  const logoSrc = useGlobalLogo();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPrompt, setShowPrompt] = useState(false);
 
@@ -36,9 +38,9 @@ export function InstallPrompt() {
   return (
     <div className="fixed bottom-20 left-4 right-4 z-50 md:bottom-6 md:left-auto md:right-6 md:w-96 animate-in slide-in-from-bottom-5">
       <div className="bg-white/90 backdrop-blur-xl border border-orange-200 shadow-2xl rounded-2xl p-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <img src="/logo.jpg" alt="Logo" className="w-12 h-12 rounded-xl object-cover shadow-sm" />
-          <div>
+        <div className="flex items-center gap-4 mb-5">
+          <img src={logoSrc} alt="Logo" className="w-12 h-12 rounded-xl object-cover shadow-sm" />
+          <div className="flex-1">
             <p className="font-bold text-gray-900 text-sm">Install App</p>
             <p className="text-xs text-gray-500 font-medium">Add to Home Screen</p>
           </div>

@@ -27,6 +27,7 @@ const UserManagement = lazy(() => import('./pages/UserManagement').then(m => ({ 
 const QRPortalSettings = lazy(() => import('./pages/QRPortalSettings').then(m => ({ default: m.QRPortalSettings })));
 const FeedbackMessages = lazy(() => import('./pages/FeedbackMessages').then(m => ({ default: m.FeedbackMessages })));
 const Notifications = lazy(() => import('./pages/Notifications').then(m => ({ default: m.Notifications })));
+const ResetPassword = lazy(() => import('./pages/ResetPassword').then(m => ({ default: m.ResetPassword })));
 
 // Portal Pages
 const PortalHome = lazy(() => import('./pages/portal/PortalHome').then(m => ({ default: m.PortalHome })));
@@ -81,6 +82,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* â”€â”€ Public QR Portal Routes â”€â”€ */}
           <Route path="/portal" element={<PortalLayout />}>

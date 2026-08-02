@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
-import { Settings as SettingsIcon, QrCode, User, Lock, CheckCircle2, ShieldCheck, Download, Upload, AlertTriangle, Fingerprint, Grid3X3, Eye, EyeOff } from 'lucide-react';
+import { Settings as SettingsIcon, QrCode, User, Lock, CheckCircle2, ShieldCheck, Download, Upload, AlertTriangle, Fingerprint, Grid3X3, Eye, EyeOff, Image as ImageIcon, MessageSquare } from 'lucide-react';
 import { AppLockMethod, hashSecret, hasPlatformAuthenticator, loadAppLockConfig, saveAppLockConfig } from '../lib/app-lock';
 import { MaskedPhoneInput } from '../components/MaskedPhoneInput';
 import { normalizePhoneDigits } from '../lib/privacy';
@@ -43,6 +43,18 @@ export function Settings() {
   // Asset State
   const [upiId, setUpiId] = useState('');
   const [festivalStartDate, setFestivalStartDate] = useState('');
+  
+  // Branding State
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  // Message Templates State
+  const [templates, setTemplates] = useState({
+    chandaConfirmation: '',
+    chandaPending: '',
+    poojaConfirmation: '',
+    poojaReminder: '',
+    festivalGreeting: '',
+  });
 
   // Reset State
   const [resetStep, setResetStep] = useState(0);
@@ -71,6 +83,13 @@ export function Settings() {
     if (isSuperAdmin && appSettings) {
       if (appSettings.upi_id) setUpiId(appSettings.upi_id);
       if (appSettings.festival_start_date) setFestivalStartDate(appSettings.festival_start_date);
+      setTemplates({
+        chandaConfirmation: appSettings.chanda_confirmation_template || '',
+        chandaPending: appSettings.chanda_pending_template || '',
+        poojaConfirmation: appSettings.pooja_confirmation_template || '',
+        poojaReminder: appSettings.pooja_reminder_template || '',
+        festivalGreeting: appSettings.festival_greeting_template || '',
+      });
     }
   }, [isSuperAdmin, appSettings]);
 
@@ -170,11 +189,84 @@ export function Settings() {
     try {
       await supabase.from('app_settings').upsert({ id: 'app', festival_start_date: festivalStartDate });
       queryClient.invalidateQueries({ queryKey: ['appSettings'] });
-      toast.success('Festival Start Date saved successfully!');
+      toast.success('Festival Date saved successfully!');
     } catch (err) {
       toast.error('Failed to save Festival Date');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveTemplates = async () => {
+    setLoading(true);
+    try {
+      await supabase.from('app_settings').upsert({
+        id: 'app',
+        chanda_confirmation_template: templates.chandaConfirmation,
+        chanda_pending_template: templates.chandaPending,
+        pooja_confirmation_template: templates.poojaConfirmation,
+        pooja_reminder_template: templates.poojaReminder,
+        festival_greeting_template: templates.festivalGreeting,
+      });
+      queryClient.invalidateQueries({ queryKey: ['appSettings'] });
+      toast.success('Message Templates saved successfully!');
+    } catch (err) {
+      toast.error('Failed to save Message Templates');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file (PNG, JPG, WEBP).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image size must be less than 2MB.');
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `logo_${Date.now()}.${fileExt}`;
+      let finalLogoUrl = '';
+
+      // Attempt to upload to 'logos' bucket
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) {
+        console.warn('Storage upload failed, falling back to Base64:', uploadError.message);
+        // Fallback: Convert to Base64
+        const toBase64 = (f: File) => new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(f);
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = error => reject(error);
+        });
+        finalLogoUrl = await toBase64(file);
+      } else {
+        const { data: publicUrlData } = supabase.storage
+          .from('logos')
+          .getPublicUrl(uploadData.path);
+        finalLogoUrl = publicUrlData.publicUrl;
+      }
+
+      await supabase.from('app_settings').upsert({ id: 'app', logo_url: finalLogoUrl });
+      queryClient.invalidateQueries({ queryKey: ['appSettings'] });
+      toast.success('Logo updated successfully! Changes will apply globally.');
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Failed to update logo.');
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -368,6 +460,8 @@ export function Settings() {
           {[
             { id: 'general', label: 'General', icon: User, show: true },
             { id: 'festival', label: 'Festival Settings', icon: CheckCircle2, show: isSuperAdmin },
+            { id: 'branding', label: 'Branding / Logo', icon: ImageIcon, show: isSuperAdmin },
+            { id: 'templates', label: 'Message Templates', icon: MessageSquare, show: isSuperAdmin },
             { id: 'backup', label: 'Backup', icon: Download, show: isSuperAdmin },
             { id: 'restore', label: 'Restore', icon: Upload, show: isSuperAdmin },
             { id: 'reset', label: 'Reset System', icon: AlertTriangle, show: isSuperAdmin },
@@ -501,6 +595,123 @@ export function Settings() {
                 <div className="flex items-center gap-4 max-w-md">
                   <input type="date" value={festivalStartDate} onChange={(e) => setFestivalStartDate(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
                   <button onClick={handleSaveFestivalDate} disabled={loading || !festivalStartDate} className="px-6 py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-sm disabled:opacity-50">Save Date</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'branding' && isSuperAdmin && (
+            <div className="p-8 space-y-8">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 border-b pb-2">Branding Settings</h2>
+              <div className="bg-orange-50 p-6 rounded-xl border border-orange-200">
+                <h3 className="font-bold text-orange-800 mb-2 flex items-center gap-2">
+                  <ImageIcon size={18} /> Global Application Logo
+                </h3>
+                <p className="text-sm text-orange-700 mb-6">
+                  Changing this logo will update it across the entire application instantly (Login, Dashboard, Portal, Receipts, etc). If no logo is uploaded, the default Ganesh logo is used.
+                </p>
+                <div className="flex flex-col md:flex-row items-center gap-8">
+                  {/* Current Logo Preview */}
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Current Logo</span>
+                    <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-white flex items-center justify-center">
+                      <img 
+                        src={appSettings?.logo_url || '/logo.jpg'} 
+                        alt="Current Logo" 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Upload Controls */}
+                  <div className="flex-1">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Upload New Logo (Max 2MB)</label>
+                    <div className="flex items-center gap-4">
+                      <label className="cursor-pointer px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2">
+                        {uploadingLogo ? 'Uploading...' : <><Upload size={18} /> Select Image</>}
+                        <input 
+                          type="file" 
+                          accept="image/png, image/jpeg, image/webp" 
+                          className="hidden" 
+                          onChange={handleLogoUpload}
+                          disabled={uploadingLogo}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'templates' && isSuperAdmin && (
+            <div className="p-8 space-y-8">
+              <div className="border-b pb-4">
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><MessageSquare size={20} className="text-orange-500" /> Message Templates</h2>
+                <p className="text-gray-500 text-sm mt-1">Configure automated WhatsApp and SMS templates (Telugu UTF-8).</p>
+              </div>
+
+              <div className="space-y-8">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Chanda Confirmation Template</label>
+                  <textarea 
+                    value={templates.chandaConfirmation}
+                    onChange={(e) => setTemplates(p => ({ ...p, chandaConfirmation: e.target.value }))}
+                    className="w-full h-40 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
+                    placeholder="Enter Chanda Confirmation Template..."
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Placeholders: {'{name}, {receiptNo}, {date}, {receiptLink}, {festivalYear}'}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Chanda Pending Reminder Template</label>
+                  <textarea 
+                    value={templates.chandaPending}
+                    onChange={(e) => setTemplates(p => ({ ...p, chandaPending: e.target.value }))}
+                    className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Placeholders: {'{name}, {pendingAmount}, {festivalYear}'}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Pooja Confirmation Template</label>
+                  <textarea 
+                    value={templates.poojaConfirmation}
+                    onChange={(e) => setTemplates(p => ({ ...p, poojaConfirmation: e.target.value }))}
+                    className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Placeholders: {'{name}, {poojaName}, {date}, {time}, {festivalYear}'}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Pooja Reminder Template</label>
+                  <textarea 
+                    value={templates.poojaReminder}
+                    onChange={(e) => setTemplates(p => ({ ...p, poojaReminder: e.target.value }))}
+                    className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Placeholders: {'{name}, {poojaName}, {date}, {time}, {festivalYear}'}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Festival Greeting Template</label>
+                  <textarea 
+                    value={templates.festivalGreeting}
+                    onChange={(e) => setTemplates(p => ({ ...p, festivalGreeting: e.target.value }))}
+                    className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Placeholders: None</p>
+                </div>
+
+                <div className="pt-4 flex justify-end">
+                  <button 
+                    onClick={handleSaveTemplates}
+                    disabled={loading}
+                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2"
+                  >
+                    {loading ? <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> : <CheckCircle2 size={18} />}
+                    Save Templates
+                  </button>
                 </div>
               </div>
             </div>

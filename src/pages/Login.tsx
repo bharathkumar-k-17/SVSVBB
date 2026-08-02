@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Loader2, User, Phone, Shield } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
+import { useGlobalLogo } from '../hooks/useGlobalLogo';
 
 type TabMode = 'login' | 'signup';
 
@@ -10,6 +11,7 @@ export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { supabaseUser, appUser: profile, signOut: logout, fetchAppUser, updateLastLogin } = useAuthStore();
+  const logoSrc = useGlobalLogo();
 
   const [tab, setTab] = useState<TabMode>(location.pathname === '/signup' ? 'signup' : 'login');
 
@@ -243,12 +245,12 @@ export function Login() {
   return (
     <div className="min-h-screen flex" style={{ background: 'linear-gradient(135deg, #2C1004 0%, #4A1C00 50%, #2C1004 100%)' }}>
 
-      {/* Left Panel â€” Branding */}
+      {/* Left Panel — Branding */}
       <div className="hidden lg:flex lg:w-1/2 flex-col items-center justify-center px-12 text-center">
         {/* Glowing Om */}
         <div className="relative mb-8">
           <img 
-            src="/logo.jpg" 
+            src={logoSrc} 
             alt="Logo" 
             className="w-48 h-48 rounded-full shadow-2xl object-cover ring-8 ring-orange-500/50" 
             style={{ boxShadow: '0 0 60px 20px rgba(255,140,0,0.4)' }}
@@ -259,14 +261,14 @@ export function Login() {
           className="text-4xl lg:text-5xl font-extrabold mb-4 leading-tight text-center"
           style={{ color: '#FFD580', fontFamily: 'Georgia, serif', textShadow: '0 2px 16px rgba(255,200,0,0.4)' }}
         >
-          à°¶à±à°°à±€ à°µà°°à°¸à°¿à°¦à±à°§à°¿ à°µà°¿à°¨à°¾à°¯à°• à°­à°•à±à°¤ à°¬à±ƒà°‚à°¦à°‚
+          శ్రీ వరసిద్ధి వినాయక భక్త బృందం
           <span className="text-2xl mt-4 block opacity-90 tracking-widest font-sans uppercase">
             - since 2008 -
           </span>
         </h1>
       </div>
 
-      {/* Right Panel â€” Auth Card */}
+      {/* Right Panel — Auth Card */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6">
         <div
           className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
@@ -277,17 +279,17 @@ export function Login() {
             {/* Mobile logo */}
             <div className="lg:hidden mb-4 flex justify-center">
               <img 
-                src="/logo.jpg" 
+                src={logoSrc} 
                 alt="Logo" 
                 className="w-20 h-20 rounded-full shadow-lg object-cover ring-4 ring-orange-500/50" 
               />
             </div>
             <div className="flex items-center justify-center gap-2 mb-6">
-              <span style={{ color: '#FF8C00', fontSize: '1.2rem' }}>ðŸ™</span>
+              <span style={{ color: '#FF8C00', fontSize: '1.2rem' }}>🙏</span>
               <h2 className="text-2xl font-bold tracking-widest uppercase" style={{ color: '#2C1004', letterSpacing: '0.2em' }}>
                 WELCOME
               </h2>
-              <span style={{ color: '#FF8C00', fontSize: '1.2rem' }}>ðŸ™</span>
+              <span style={{ color: '#FF8C00', fontSize: '1.2rem' }}>🙏</span>
             </div>
 
             {/* Tabs */}
@@ -389,7 +391,7 @@ export function Login() {
                   {loginLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
-                    <>{resetMode ? 'Send Reset Link' : 'ðŸ™ Login'}</>
+                    <>{resetMode ? 'Send Reset Link' : '🙏 Login'}</>
                   )}
                 </button>
               </form>
@@ -618,7 +620,7 @@ export function Login() {
                   {signupLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
-                    'ðŸ™ Register'
+                    '🙏 Register'
                   )}
                 </button>
               </form>

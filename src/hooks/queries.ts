@@ -10,7 +10,7 @@ export const useAppSettings = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('app_settings')
-        .select('id, system_access, upi_id, festival_start_date')
+        .select('id, system_access, upi_id, festival_start_date, logo_url, chanda_confirmation_template, chanda_pending_template, pooja_confirmation_template, pooja_reminder_template, festival_greeting_template')
         .eq('id', 'app')
         .single();
       if (error) throw error;
@@ -285,7 +285,7 @@ export const usePayments = (
     queryFn: async () => {
       let query = supabase
         .from('devotees')
-        .select('id, name, phone, receipt_no, payment_mode, total_amount, paid_amount, pending_amount, payment_status, created_at, volunteer_id, gotram', { count: 'exact' })
+        .select('id, name, phone, receipt_no, payment_mode, total_amount, paid_amount, pending_amount, payment_status, created_at, volunteer_id, volunteer_name, gotram', { count: 'exact' })
         .eq('year', year)
         .eq('payment_mode', mode)
         .gt('paid_amount', 0)
@@ -314,6 +314,7 @@ export const usePayments = (
         paymentStatus: row.payment_status,
         createdAt: row.created_at,
         volunteerId: row.volunteer_id,
+        volunteerName: row.volunteer_name,
         gotram: row.gotram,
       }));
 
@@ -551,7 +552,7 @@ export const useReportsData = (yearId: string | undefined, enabled: boolean) => 
       if (!yearId) return { devotees: [], expenses: [] };
       
       const [devoteesRes, expensesRes] = await Promise.all([
-        supabase.from('devotees').select('id, name, phone, amount_pledged, paid_amount, payment_mode, volunteer_id, gotram').eq('year_id', yearId),
+        supabase.from('devotees').select('id, name, phone, amount_pledged, paid_amount, payment_mode, volunteer_id, volunteer_name, gotram').eq('year_id', yearId),
         supabase.from('expenses').select('id, amount, category, date, payment_mode').eq('year_id', yearId)
       ]);
       
@@ -645,6 +646,7 @@ export const useRecordsData = (year: number) => {
         paidAmount: d.paid_amount,
         pendingAmount: d.pending_amount,
         volunteerId: d.volunteer_id,
+        volunteerName: d.volunteer_name,
         createdAt: new Date(d.created_at).getTime()
       }));
 

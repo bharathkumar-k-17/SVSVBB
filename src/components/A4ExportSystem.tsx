@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Download, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useGlobalLogo } from '../hooks/useGlobalLogo';
 
 interface A4ExportSystemProps {
   data: any[];
@@ -31,6 +32,7 @@ export const A4ExportSystem: React.FC<A4ExportSystemProps> = ({
   filename = 'records.pdf',
   year
 }) => {
+  const logoSrc = useGlobalLogo();
   const [isExporting, setIsExporting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -223,7 +225,7 @@ export const A4ExportSystem: React.FC<A4ExportSystemProps> = ({
                       justifyContent: 'center'
                     }}
                   >
-                    <img src="/logo.jpg" alt="Watermark" style={{ width: '100%', height: 'auto', borderRadius: '50%' }} />
+                    <img src={logoSrc} alt="Watermark" style={{ width: '100%', height: 'auto', borderRadius: '50%' }} />
                   </div>
     
                   {/* 2. CONTENT LAYER */}
@@ -233,7 +235,7 @@ export const A4ExportSystem: React.FC<A4ExportSystemProps> = ({
                     {pageIndex === 0 ? (
                       <div style={{ marginBottom: '20px', textAlign: 'center', borderBottom: '2.5px solid #000', paddingBottom: '10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px' }}>
-                          <img src="/logo.jpg" style={{ height: '70px', width: '70px', borderRadius: '50%' }} />
+                          <img src={logoSrc} style={{ height: '70px', width: '70px', borderRadius: '50%' }} />
                           <div>
                             <h1 style={{ fontSize: '24px', fontWeight: '900', margin: 0, color: '#000', textTransform: 'uppercase', letterSpacing: '1px' }}>
                               శ్రీ వరసిద్ధి వినాయక భక్త బృందం
@@ -242,7 +244,7 @@ export const A4ExportSystem: React.FC<A4ExportSystemProps> = ({
                                {title} Report • {year}
                             </p>
                           </div>
-                          <img src="/logo.jpg" style={{ height: '70px', width: '70px', borderRadius: '50%' }} />
+                          <img src={logoSrc} style={{ height: '70px', width: '70px', borderRadius: '50%' }} />
                         </div>
                       </div>
                     ) : (
