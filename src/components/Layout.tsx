@@ -81,18 +81,7 @@ export function Layout() {
   return (
     <div className="flex h-screen bg-orange-50/60 relative overflow-hidden">
 
-      {/* ── Ganesh Watermark ── */}
-      <div
-        className="absolute inset-0 z-0 pointer-events-none"
-        aria-hidden="true"
-        style={{
-          backgroundImage: 'url("/bg.png")',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          opacity: 0.12,
-        }}
-      />
+
 
       {/* ══════════════════════════════
           LEFT SIDEBAR — Desktop

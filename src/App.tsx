@@ -9,6 +9,7 @@ import { Skeleton } from './components/ui/Skeleton';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PortalLayout } from './pages/portal/PortalLayout';
+import { DynamicBranding } from './components/DynamicBranding';
 
 // Pages (Lazy load to code split)
 const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
@@ -78,6 +79,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <DynamicBranding />
       <Suspense fallback={<PageSkeleton />}>
         <Routes>
           <Route path="/login" element={<Login />} />

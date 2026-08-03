@@ -22,7 +22,7 @@ export default defineConfig({
     viteCompression({ algorithm: 'gzip' }),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'bg.png', 'logo.jpg'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'logo.jpg'],
       manifest: {
         name: 'SVSVBB Ganesh Festival',
         short_name: 'SVSVBB',
