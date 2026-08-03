@@ -1,17 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-// ─── Startup validation ───────────────────────────────────────────────────────
 if (!supabaseUrl) {
-  console.error('[Supabase] VITE_SUPABASE_URL is missing from .env');
+  throw new Error('[Supabase] Missing VITE_SUPABASE_URL');
 }
 
-if (!supabaseAnonKey) {
-  console.error(
-    '[Supabase] Missing Publishable Key'
-  );
+if (!supabasePublishableKey) {
+  throw new Error('[Supabase] Missing VITE_SUPABASE_PUBLISHABLE_KEY');
 }
 
 // ─── Database Types ───────────────────────────────────────────────────────────
@@ -229,8 +226,8 @@ export type Database = {
 // strict type resolution issues that cause 'never' inference on .insert()/.update().
 // The DB interfaces above are used for documentation and manual casts where needed.
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder',
+  supabaseUrl,
+  supabasePublishableKey,
   {
     auth: {
       persistSession: true,
