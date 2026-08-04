@@ -57,7 +57,7 @@ const PoojaBooking: React.FC = () => {
         setFestivalStartDate(newDate);
         toast.success("Festival start date updated!");
         // Re-initialize to update slot logic if needed
-        if (window.confirm("Re-initialize 9-day calendar with new date?")) {
+        if (window.confirm("Re-initialize 8-day calendar with new date?")) {
            await initializePoojaSlots(true);
         }
       } catch (e) {
@@ -155,9 +155,9 @@ const PoojaBooking: React.FC = () => {
         if (slot.time === 'morning') grouped[slot.day].morning = slot;
         if (slot.time === 'evening') grouped[slot.day].evening = slot;
     });
-    // Filter out Day 10+ just in case
+    // Filter out Day 9+ just in case
     return Object.entries(grouped)
-      .filter(([day]) => Number(day) <= 9)
+      .filter(([day]) => Number(day) <= 8)
       .sort((a,b) => Number(a[0]) - Number(b[0]));
   }, [slots]);
 
@@ -273,14 +273,14 @@ const PoojaBooking: React.FC = () => {
                   <div className="w-24 h-24 bg-orange-50 rounded-full flex items-center justify-center text-5xl mb-8 shadow-inner">🗓️</div>
                   <h3 className="text-4xl font-black text-gray-900 mb-4 tracking-tighter">Calendar Not Set</h3>
                   <p className="text-gray-500 max-w-sm mx-auto mb-10 font-bold leading-relaxed">
-                      Please set the festival start date using the button in the top right corner to initialize the 9-day pooja calendar.
+                      Please set the festival start date using the button in the top right corner to initialize the 8-day pooja calendar.
                   </p>
                   {isAdmin && (
                       <button 
                         onClick={() => initializePoojaSlots()}
                         className="bg-gray-900 hover:bg-black text-white font-black py-6 px-14 rounded-[2.5rem] shadow-2xl shadow-gray-300 transition-all active:scale-95 flex items-center gap-4 uppercase tracking-widest text-sm group"
                       >
-                          <span>Initialize 9-Day Pooja</span>
+                          <span>Initialize 8-Day Pooja</span>
                           <Plus className="w-6 h-6 group-hover:rotate-90 transition-transform" />
                       </button>
                   )}

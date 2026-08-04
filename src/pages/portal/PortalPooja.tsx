@@ -61,7 +61,7 @@ export function PortalPooja() {
         if (slot.time === 'evening') grouped[slot.day].evening = slot;
     });
     return Object.entries(grouped)
-      .filter(([day]) => Number(day) <= 9)
+      .filter(([day]) => Number(day) <= 8)
       .sort((a,b) => Number(a[0]) - Number(b[0]));
   }, [slots]);
 

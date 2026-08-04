@@ -174,7 +174,7 @@ export const cancelFamilyBooking = async (
   }
 };
 
-// Initialize 9 days × morning/evening
+// Initialize 8 days × morning/evening
 export const initializePoojaSlots = async (force = false) => {
   const { data: settings, error: settingsError } = await supabase
     .from('app_settings')
@@ -205,7 +205,7 @@ export const initializePoojaSlots = async (force = false) => {
 
   const slots = [];
 
-  for (let day = 1; day <= 9; day++) {
+  for (let day = 1; day <= 8; day++) {
     for (const time of ['morning', 'evening'] as const) {
       slots.push({
         id: `day${day}_${time}`,
@@ -222,7 +222,7 @@ export const initializePoojaSlots = async (force = false) => {
 
   if (error) throw error;
 
-  console.log('Slots initialized successfully for 9 days.');
+  console.log('Slots initialized successfully for 8 days.');
 };
 
 export const updateFestivalStartDate = async (date: string) => {
