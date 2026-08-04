@@ -11,7 +11,7 @@ import { format } from 'date-fns';
 import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from '../lib/templates';
 import { TeluguInput } from '../components/TeluguInput';
 import { MaskedPhoneInput } from '../components/MaskedPhoneInput';
-import { createAdminNotification } from '../lib/notifications';
+
 import { maskPhoneNumber, normalizePhoneDigits } from '../lib/privacy';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -90,54 +90,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
   );
 
   // Generate receipt number using atomic counter
-  const generateReceiptNo = async (): Promise<string> => {
-    const now = Date.now();
-    const yy = format(now, 'yy');
-    const mm = format(now, 'MM');
-    const dd = format(now, 'dd');
-    const dateStr = `${yy}${mm}${dd}`;
-    const counterKey = `receipt_${dateStr}`;
 
-    try {
-      // Try RPC function first (atomic, preferred)
-      const { data: rpcData, error: rpcError } = await supabase.rpc('generate_receipt_no', {
-        date_str: dateStr,
-      });
-
-      if (!rpcError && rpcData) {
-        return rpcData as string;
-      }
-
-      // Fallback: manual upsert approach
-      // First try to increment existing counter
-      const { data: existing } = await supabase
-        .from('counters')
-        .select('count')
-        .eq('id', counterKey)
-        .single();
-
-      let currentCount: number;
-      if (existing) {
-        currentCount = (existing.count || 0) + 1;
-        await supabase
-          .from('counters')
-          .update({ count: currentCount })
-          .eq('id', counterKey);
-      } else {
-        currentCount = 1;
-        await supabase
-          .from('counters')
-          .insert({ id: counterKey, count: 1 });
-      }
-
-      return `G${dateStr}${currentCount.toString().padStart(3, '0')}`;
-    } catch (err) {
-      // Last resort: timestamp-based receipt
-      console.warn('Receipt counter failed, using timestamp fallback:', err);
-      const ts = Date.now().toString().slice(-4);
-      return `G${dateStr}${ts}`;
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,83 +109,41 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
 
     try {
       const now = Date.now();
-      const receiptNo = await generateReceiptNo();
-
       const tAmt = Number(formData.totalAmount) || 0;
       const pAmt = Number(formData.paidAmount) || 0;
       const pending = tAmt - pAmt;
       const status = pending === 0 ? 'PAID' : (pAmt > 0 ? 'PARTIAL' : 'UNPAID');
 
-      const devoteeData = {
-        name: formData.name,
-        phone: rawPhone,
-        total_amount: tAmt,
-        paid_amount: pAmt,
-        pending_amount: pending,
-        donation_item: formData.donationItem,
-        payment_mode: formData.paymentMode,
-        payment_status: status,
-        gotram: isVip ? formData.gotram : '',
-        family_members: isVip ? formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean) : [],
-        year: currentYear,
-        volunteer_id: isPortal ? 'portal' : (appUser?.email || 'admin'),
-        volunteer_name: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
-        volunteer_phone: isPortal ? formData.phone : (appUser?.phone || ''),
-        created_at: formData.date ? new Date(formData.date).getTime() : now,
-        receipt_no: receiptNo,
-      };
+      let devoteeId = '';
+      let receiptNo = '';
+      let createdTime = formData.date ? new Date(formData.date).getTime() : now;
 
-      const { data: insertedRow, error: insertError } = await supabase
-        .from('devotees')
-        .insert(devoteeData)
-        .select('id')
-        .single();
-
-      if (insertError) throw insertError;
-
-      const devoteeId = insertedRow.id;
-
-      let notifType = '';
-      let notifMessage = '';
-      const amountStr = new Intl.NumberFormat('en-IN').format(pAmt);
-
-      if (isPortal) {
-        if (pAmt > 0) {
-          notifType = 'QR PORTAL · CHANDA';
-          notifMessage = `${formData.name || 'Unknown'} submitted ₹${amountStr} Chanda via ${formData.paymentMode}.`;
-        } else {
-          notifType = 'QR PORTAL · REGISTRATION';
-          notifMessage = `${formData.name || 'Unknown'} completed a new registration.`;
+      // Securely process through the Edge Function for all users
+      const { data: funcData, error: funcError } = await supabase.functions.invoke('create-chanda', {
+        body: {
+          name: formData.name,
+          phone: rawPhone,
+          total_amount: tAmt,
+          paid_amount: pAmt,
+          donation_item: formData.donationItem,
+          payment_mode: formData.paymentMode,
+          payment_status: status,
+          gotram: isVip ? formData.gotram : '',
+          family_members: isVip ? formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean) : [],
+          year: currentYear,
+          created_at: createdTime,
+          isPortal: isPortal,
+          volunteer_id: isPortal ? 'portal' : (appUser?.email || 'admin'),
+          volunteer_name: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
+          volunteer_phone: isPortal ? rawPhone : (appUser?.phone || ''),
         }
-      } else {
-        notifType = 'CHANDA ENTRY';
-        notifMessage = `${appUser?.name || 'Volunteer'} added ₹${amountStr} Chanda from ${formData.name || 'Unknown'}.`;
-      }
+      });
 
-      createAdminNotification({
-        actor: appUser,
-        actorName: isPortal ? formData.name || 'Unknown' : undefined,
-        type: notifType,
-        message: notifMessage
-      }).catch(console.error);
-
-      // Save initial payment
-      if (pAmt > 0) {
-        supabase
-          .from('payment_histories')
-          .insert({
-            devotee_id: devoteeId,
-            amount: pAmt,
-            mode: formData.paymentMode,
-            date: now,
-            volunteer_id: isPortal ? 'portal' : (appUser?.email || 'admin'),
-            volunteer_name: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
-            year: currentYear,
-          })
-          .then(({ error }) => {
-            if (error) console.warn('Payment history insert failed:', error);
-          });
-      }
+      if (funcError) throw funcError;
+      if (funcData?.error) throw new Error(funcData.error);
+      
+      devoteeId = funcData.devoteeId;
+      receiptNo = funcData.receiptNo;
 
       // Build camelCase object for the Receipt component (it expects app-side types)
       const savedDevotee = {
@@ -251,7 +162,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
         volunteerId: isPortal ? 'portal' : (appUser?.email || 'admin'),
         volunteerName: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
         volunteerPhone: isPortal ? formData.phone : (appUser?.phone || ''),
-        createdAt: formData.date ? new Date(formData.date).getTime() : now,
+        createdAt: createdTime,
         receiptNo: receiptNo,
       };
       setLastSavedDevotee(savedDevotee);
@@ -261,33 +172,6 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
       // Auto-generate and download PDF only in portal mode
       if (isPortal) {
         setTimeout(() => generatePDF(receiptNo), 500);
-      }
-
-      // ── Auto-add to VIP Gothram list if amount >= 1000 and gotram is provided ──
-      if (tAmt >= 1000 && isVip && formData.gotram.trim()) {
-        try {
-          // Get max order for the year
-          const { data: vipData } = await supabase
-            .from('vip_gotrams')
-            .select('order')
-            .eq('year', currentYear)
-            .order('order', { ascending: false })
-            .limit(1);
-
-          const maxOrder = vipData && vipData.length > 0 ? (vipData[0].order ?? 0) : 0;
-
-          await supabase.from('vip_gotrams').insert({
-            gotram: formData.gotram.trim(),
-            family_members: formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean),
-            order: maxOrder + 1,
-            source: 'Chanda',
-            devotee_id: devoteeId,
-            year: currentYear,
-            created_at: now,
-          });
-        } catch (vipErr) {
-          console.warn('VIP auto-add failed (non-critical):', vipErr);
-        }
       }
 
       setFormData({
