@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../lib/supabase';
 import { Settings as SettingsIcon, QrCode, User, Lock, CheckCircle2, ShieldCheck, Download, Upload, AlertTriangle, Fingerprint, Grid3X3, Eye, EyeOff, Image as ImageIcon, MessageSquare } from 'lucide-react';
-import { AppLockMethod, hashSecret, hasPlatformAuthenticator, loadAppLockConfig, saveAppLockConfig } from '../lib/app-lock';
+import { AppLockMethod, hashSecret, hasPlatformAuthenticator, loadAppLockConfig, saveAppLockConfig, registerBiometric } from '../lib/app-lock';
 import { MaskedPhoneInput } from '../components/MaskedPhoneInput';
 import { normalizePhoneDigits } from '../lib/privacy';
 import { useNavigate } from 'react-router-dom';
@@ -158,9 +158,21 @@ export function Settings() {
       const pinHash = lockMethod === 'pin' || lockMethod === 'fingerprint' ? await hashSecret(lockPin) : savedConfig.pinHash;
       const patternHash = lockMethod === 'pattern' ? await hashSecret(lockPattern.join('-')) : savedConfig.patternHash;
 
+      let webauthnCredentialId = savedConfig.webauthnCredentialId;
+      if (lockMethod === 'fingerprint' && fingerprintAvailable) {
+         const credId = await registerBiometric();
+         if (credId) {
+            webauthnCredentialId = credId;
+         } else {
+            toast.error('Failed to register biometric. Falling back to PIN.');
+            setLockMethod('pin');
+         }
+      }
+
       saveAppLockConfig({
         enabled: true, method: lockMethod, pinHash, patternHash, inactivityMinutes,
-        fingerprintEnabled: lockMethod === 'fingerprint' && fingerprintAvailable, updatedAt: Date.now(),
+        fingerprintEnabled: lockMethod === 'fingerprint' && fingerprintAvailable, 
+        webauthnCredentialId, updatedAt: Date.now(),
       });
       setLockPin(''); setLockConfirmPin(''); setLockPattern([]);
       toast.success('App lock saved successfully.');

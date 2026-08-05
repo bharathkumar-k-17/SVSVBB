@@ -105,6 +105,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     await supabase.auth.signOut();
     set({ session: null, supabaseUser: null, appUser: null });
+    window.location.replace('/login');
   },
 
   updateLastLogin: async (userId: string) => {

@@ -62,6 +62,8 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
     const globalLogo = useGlobalLogo();
     const logoSrc = customLogoSrc || globalLogo;
     const exportRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [scale, setScale] = useState(1);
     const [loading, setLoading] = useState<string | null>(null);
     const [upiId, setUpiId] = useState<string>('');
     const { appUser } = useAuthStore();
@@ -82,6 +84,21 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         } catch (err) {}
       };
       fetchSettings();
+    }, []);
+
+    /* ─ Resize Observer for Mobile Scaling ─ */
+    useEffect(() => {
+      if (!containerRef.current) return;
+      const observer = new ResizeObserver((entries) => {
+        const { width } = entries[0].contentRect;
+        if (width < 794) {
+          setScale(width / 794);
+        } else {
+          setScale(1);
+        }
+      });
+      observer.observe(containerRef.current);
+      return () => observer.disconnect();
     }, []);
 
     /* ─ Derived values ─ */
@@ -221,7 +238,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
       `inline-flex justify-center items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-md w-full sm:w-auto ${color}`;
 
     return (
-      <div className="w-full">
+      <div className="w-full" ref={containerRef}>
         {(!hideActions && !isPortal) && (
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-3 mb-5 print:hidden">
             <button onClick={downloadPDF} disabled={!!loading} className={BtnClass('bg-red-600 text-white hover:bg-red-700')}>
@@ -247,15 +264,30 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
             794px ≈ A4 width at 96dpi.
             We use a fixed width so the layout is always consistent for PDF/print.
         ── */}
-        <div
-          ref={exportRef}
-          id="receipt-export-container"
-          className="relative mx-auto overflow-hidden bg-white border-2 border-amber-400 shadow-2xl w-full max-w-[794px] sm:min-h-[1123px]"
+        <div 
+          className="mx-auto flex justify-center"
           style={{
-            fontFamily: "'Segoe UI', 'Noto Sans Telugu', sans-serif",
-            breakInside: 'avoid',
+            width: scale < 1 ? `${794 * scale}px` : '794px',
+            height: scale < 1 ? `${1123 * scale}px` : 'auto',
           }}
         >
+          <div
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+              width: '794px',
+            }}
+            className="print:transform-none print:w-[794px]"
+          >
+            <div
+              ref={exportRef}
+              id="receipt-export-container"
+              className="relative bg-white border-2 border-amber-400 shadow-2xl w-[794px] min-h-[1123px]"
+              style={{
+                fontFamily: "'Segoe UI', 'Noto Sans Telugu', sans-serif",
+                breakInside: 'avoid',
+              }}
+            >
           {/* ── FULL-PAGE WATERMARK ── */}
           <div
             className="pointer-events-none select-none absolute inset-0 flex items-center justify-center z-0"
@@ -532,7 +564,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         </div>
       </div>
     );
-  },
+  }
 );
 
 Receipt.displayName = 'Receipt';

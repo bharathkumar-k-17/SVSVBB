@@ -1,9 +1,12 @@
 import { Link } from 'react-router-dom';
 import { usePortalStore } from '../../store/portalStore';
-import { HeartHandshake, Download, CalendarDays, MessageSquareHeart, ChevronRight } from 'lucide-react';
+import { HeartHandshake, Download, CalendarDays, MessageSquareHeart, ChevronRight, ScanLine } from 'lucide-react';
+import { useState } from 'react';
+import { QRScanner } from '../../components/QRScanner';
 
 export function PortalHome() {
   const { settings } = usePortalStore();
+  const [showScanner, setShowScanner] = useState(false);
 
   if (!settings) return null;
 
@@ -103,6 +106,18 @@ export function PortalHome() {
           );
         })}
       </div>
+
+      <div className="flex justify-center mt-6">
+        <button
+          onClick={() => setShowScanner(true)}
+          className="flex items-center gap-2 px-6 py-3 bg-white/80 backdrop-blur-md rounded-xl border-2 border-orange-200 text-orange-700 font-bold shadow-sm hover:shadow-md hover:bg-orange-50 transition-all"
+        >
+          <ScanLine size={20} />
+          Scan QR Code
+        </button>
+      </div>
+
+      {showScanner && <QRScanner onClose={() => setShowScanner(false)} />}
     </div>
   );
 }

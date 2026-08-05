@@ -10,11 +10,14 @@ import {
 } from 'lucide-react';
 import { maskPhoneNumber } from '../lib/privacy';
 import { useDashboardStats } from '../hooks/queries';
+import { QRScanner } from '../components/QRScanner';
+import { useState } from 'react';
 
 export function Dashboard() {
   const { currentYear, setYear } = useAppStore();
   const { appUser } = useAuthStore();
   const navigate = useNavigate();
+  const [showScanner, setShowScanner] = useState(false);
 
   const isVolunteer = appUser?.role === 'volunteer';
   const { data: stats, isLoading } = useDashboardStats(currentYear);
@@ -151,22 +154,34 @@ export function Dashboard() {
           </p>
         </div>
 
-        {/* Year selector (Only for Admins) */}
-        {!isVolunteer && (
-          <div className="flex items-center gap-2 bg-white/50 backdrop-blur-md border border-white/60 rounded-xl px-3 py-1.5 shadow-md ring-1 ring-black/5">
-            <span className="text-xs text-gray-800 font-bold">Festival Year:</span>
-            <select
-              value={currentYear}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-br from-purple-600 to-orange-600 focus:outline-none cursor-pointer bg-transparent"
-            >
-              {[...Array(5)].map((_, i) => {
-                const yr = new Date().getFullYear() - i;
-                return <option key={yr} value={yr} className="text-black">{yr}</option>;
-              })}
-            </select>
-          </div>
-        )}
+        {/* Year selector and Scanner */}
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+          <button
+            onClick={() => setShowScanner(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-4 py-2 rounded-xl shadow-lg transition-all font-bold text-sm"
+          >
+            <span className="bg-white/20 p-1 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect width="10" height="10" x="7" y="7" rx="1"/></svg>
+            </span>
+            Scan QR
+          </button>
+
+          {!isVolunteer && (
+            <div className="flex items-center gap-2 bg-white/50 backdrop-blur-md border border-white/60 rounded-xl px-3 py-1.5 shadow-md ring-1 ring-black/5">
+              <span className="text-xs text-gray-800 font-bold">Festival Year:</span>
+              <select
+                value={currentYear}
+                onChange={(e) => setYear(Number(e.target.value))}
+                className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-br from-purple-600 to-orange-600 focus:outline-none cursor-pointer bg-transparent"
+              >
+                {[...Array(5)].map((_, i) => {
+                  const yr = new Date().getFullYear() - i;
+                  return <option key={yr} value={yr} className="text-black">{yr}</option>;
+                })}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── STAT CARDS ── */}
@@ -314,6 +329,7 @@ export function Dashboard() {
         </div>
       </div>
 
+      {showScanner && <QRScanner onClose={() => setShowScanner(false)} />}
     </div>
   );
 }

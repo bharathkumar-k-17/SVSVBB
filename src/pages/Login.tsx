@@ -10,7 +10,7 @@ type TabMode = 'login' | 'signup';
 export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { supabaseUser, appUser: profile, signOut: logout, fetchAppUser, updateLastLogin } = useAuthStore();
+  const { supabaseUser, appUser: profile, signOut: logout, fetchAppUser, updateLastLogin, loading } = useAuthStore();
   const logoSrc = useGlobalLogo();
 
   const [tab, setTab] = useState<TabMode>(location.pathname === '/signup' ? 'signup' : 'login');
@@ -56,6 +56,14 @@ export function Login() {
     }
   }, [supabaseUser, profile, logout]);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #2C1004 0%, #4A1C00 50%, #2C1004 100%)' }}>
+        <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
+      </div>
+    );
+  }
+
   if (supabaseUser && profile?.status === 'approved') {
     return <Navigate to="/dashboard" replace />;
   }
@@ -96,16 +104,14 @@ export function Login() {
     try {
       let finalEmail = loginEmail.trim();
 
-      // IF IT DOESN'T LOOK LIKE AN EMAIL, resolve username or phone using Supabase
+      // IF IT DOESN'T LOOK LIKE AN EMAIL, resolve username or phone using Supabase RPC
       if (!finalEmail.includes('@')) {
-        const { data } = await supabase
-          .from('users')
-          .select('email')
-          .or(`username.eq.${finalEmail.toLowerCase()},phone.eq.${finalEmail}`)
-          .maybeSingle();
+        const { data, error: rpcError } = await supabase.rpc('resolve_login_email', {
+          identifier: finalEmail
+        });
         
-        if (data && data.email) {
-          finalEmail = data.email;
+        if (data) {
+          finalEmail = data;
         } else {
           setLoginError('No account found with this username or phone number.');
           setLoginLoading(false);

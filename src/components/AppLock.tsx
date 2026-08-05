@@ -5,6 +5,7 @@ import {
   hasPlatformAuthenticator,
   hashSecret,
   loadAppLockConfig,
+  verifyBiometric,
 } from '../lib/app-lock';
 import { useAuthStore } from '../store/authStore';
 
@@ -42,6 +43,9 @@ export function AppLock() {
       setLocked(true);
       setPin('');
       setPattern([]);
+      if (config.method === 'fingerprint' && config.fingerprintEnabled) {
+         handleFingerprint();
+      }
     } else {
       setLocked(false);
     }
@@ -56,11 +60,20 @@ export function AppLock() {
       timeoutId = window.setTimeout(() => setLocked(true), config.inactivityMinutes * 60 * 1000);
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+         // Lock immediately when app goes to background
+         setLocked(true);
+      }
+    };
+
     activityEvents.forEach((eventName) => window.addEventListener(eventName, resetTimer, { passive: true }));
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.clearTimeout(timeoutId);
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [config.enabled, config.inactivityMinutes, locked, supabaseUser]);
 
@@ -123,7 +136,13 @@ export function AppLock() {
       setError('Fingerprint is not available on this device.');
       return;
     }
-    unlock();
+    setError('');
+    const success = await verifyBiometric();
+    if (success) {
+      unlock();
+    } else {
+      setError('Fingerprint verification failed. Please use PIN or Pattern.');
+    }
   };
 
   const methodLabel = useMemo(() => {
