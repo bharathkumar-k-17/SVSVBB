@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppSettings } from '../hooks/queries';
+import { useAppLockStore } from '../store/appLockStore';
 
 export function Settings() {
   const { appUser, supabaseUser } = useAuthStore();
@@ -31,14 +32,17 @@ export function Settings() {
   const [showPins, setShowPins] = useState(false);
 
   // App Lock State
-  const initialLockConfig = loadAppLockConfig();
+  const initialLockConfig = loadAppLockConfig(supabaseUser?.id);
   const [lockEnabled, setLockEnabled] = useState(initialLockConfig.enabled);
-  const [lockMethod, setLockMethod] = useState<AppLockMethod>(initialLockConfig.method);
+  const [lockMethod, setLockMethod] = useState<AppLockMethod>(initialLockConfig.method === 'pattern' ? 'pin' : initialLockConfig.method);
   const [lockPin, setLockPin] = useState('');
   const [lockConfirmPin, setLockConfirmPin] = useState('');
-  const [lockPattern, setLockPattern] = useState<number[]>([]);
-  const [inactivityMinutes, setInactivityMinutes] = useState(initialLockConfig.inactivityMinutes || 5);
+  const [inactivityMinutes, setInactivityMinutes] = useState(initialLockConfig.inactivityMinutes || 2);
+  const [vibrate, setVibrate] = useState(initialLockConfig.vibrate ?? true);
+  const [sound, setSound] = useState(initialLockConfig.sound ?? false);
+  const [lockOnLogout, setLockOnLogout] = useState(initialLockConfig.lockOnLogout ?? true);
   const [fingerprintAvailable, setFingerprintAvailable] = useState(false);
+  const { syncLockStatus } = useAppLockStore();
   
   // Asset State
   const [upiId, setUpiId] = useState('');
@@ -133,49 +137,68 @@ export function Settings() {
     }
   };
 
+  const handleToggleAppLock = async (enabled: boolean) => {
+    if (!supabaseUser?.id) return;
+    setLockEnabled(enabled);
+    
+    const savedConfig = loadAppLockConfig(supabaseUser.id);
+    
+    if (!enabled) {
+      saveAppLockConfig(supabaseUser.id, { ...savedConfig, enabled: false, updatedAt: Date.now() });
+      await syncLockStatus(supabaseUser.id, false);
+      toast.success('App lock disabled.');
+    } else {
+      if (savedConfig.pinHash || savedConfig.webauthnCredentialId) {
+        saveAppLockConfig(supabaseUser.id, { ...savedConfig, enabled: true, updatedAt: Date.now() });
+        await syncLockStatus(supabaseUser.id, true);
+        toast.success('App lock enabled.');
+      } else {
+        toast.success('Please configure a PIN to enable App Lock.');
+      }
+    }
+  };
+
   const handleSaveAppLock = async () => {
+    if (!supabaseUser?.id) return;
     setLoading(true);
     try {
-      if (!lockEnabled) {
-        saveAppLockConfig({ enabled: false, method: lockMethod, inactivityMinutes, updatedAt: Date.now() });
-        toast.success('App lock disabled.');
+      if ((lockMethod === 'pin' || lockMethod === 'fingerprint') && lockPin && lockPin.length < 6) {
+        toast.error('Set a 6-digit PIN.');
         return;
       }
-      if ((lockMethod === 'pin' || lockMethod === 'fingerprint') && lockPin.length < 4) {
-        toast.error('Set a 4-6 digit PIN.');
-        return;
-      }
-      if ((lockMethod === 'pin' || lockMethod === 'fingerprint') && lockPin !== lockConfirmPin) {
+      if ((lockMethod === 'pin' || lockMethod === 'fingerprint') && lockPin && lockPin !== lockConfirmPin) {
         toast.error('PIN and confirm PIN do not match.');
         return;
       }
-      if (lockMethod === 'pattern' && lockPattern.length < 4) {
-        toast.error('Select at least four pattern points.');
+
+      const savedConfig = loadAppLockConfig(supabaseUser.id);
+      let pinHash = savedConfig.pinHash;
+      if (lockPin) {
+        pinHash = await hashSecret(lockPin);
+      } else if (!pinHash) {
+        toast.error('Please enter a 6-digit PIN.');
         return;
       }
 
-      const savedConfig = loadAppLockConfig();
-      const pinHash = lockMethod === 'pin' || lockMethod === 'fingerprint' ? await hashSecret(lockPin) : savedConfig.pinHash;
-      const patternHash = lockMethod === 'pattern' ? await hashSecret(lockPattern.join('-')) : savedConfig.patternHash;
-
       let webauthnCredentialId = savedConfig.webauthnCredentialId;
       if (lockMethod === 'fingerprint' && fingerprintAvailable) {
-         const credId = await registerBiometric();
+         const credId = await registerBiometric(supabaseUser.id);
          if (credId) {
             webauthnCredentialId = credId;
          } else {
-            toast.error('Failed to register biometric. Falling back to PIN.');
+            toast.error('Failed to register device auth. Falling back to PIN.');
             setLockMethod('pin');
          }
       }
 
-      saveAppLockConfig({
-        enabled: true, method: lockMethod, pinHash, patternHash, inactivityMinutes,
+      saveAppLockConfig(supabaseUser.id, {
+        enabled: true, method: lockMethod, pinHash, inactivityMinutes, vibrate, sound, lockOnLogout,
         fingerprintEnabled: lockMethod === 'fingerprint' && fingerprintAvailable, 
         webauthnCredentialId, updatedAt: Date.now(),
       });
-      setLockPin(''); setLockConfirmPin(''); setLockPattern([]);
-      toast.success('App lock saved successfully.');
+      await syncLockStatus(supabaseUser.id, true);
+      setLockPin(''); setLockConfirmPin('');
+      toast.success('App lock settings saved securely.');
     } finally {
       setLoading(false);
     }
@@ -556,36 +579,57 @@ export function Settings() {
                 <div className="flex items-center justify-between mb-4 border-b pb-2">
                   <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><ShieldCheck size={20}/> App Lock</h2>
                   <label className="inline-flex items-center cursor-pointer">
-                    <input type="checkbox" checked={lockEnabled} onChange={(e) => setLockEnabled(e.target.checked)} className="sr-only peer" />
+                    <input type="checkbox" checked={lockEnabled} onChange={(e) => handleToggleAppLock(e.target.checked)} className="sr-only peer" />
                     <span className="h-6 w-11 rounded-full bg-gray-200 peer-checked:bg-orange-500 after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full relative"></span>
                   </label>
                 </div>
                 {lockEnabled && (
                   <div className="space-y-6 max-w-xl">
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                       {[
-                        { id: 'pin' as AppLockMethod, label: 'PIN', icon: Lock },
-                        { id: 'fingerprint' as AppLockMethod, label: 'Fingerprint', icon: Fingerprint, disabled: !fingerprintAvailable },
-                        { id: 'pattern' as AppLockMethod, label: 'Pattern', icon: Grid3X3 },
+                        { id: 'pin' as AppLockMethod, label: 'App PIN', icon: Lock },
+                        { id: 'fingerprint' as AppLockMethod, label: 'Device Auth (Biometrics/PIN)', icon: Fingerprint, disabled: !fingerprintAvailable },
                       ].map((method) => (
-                        <button key={method.id} type="button" disabled={method.disabled} onClick={() => setLockMethod(method.id)} className={`flex flex-col items-center gap-2 rounded-xl border p-4 text-sm font-bold transition-all disabled:opacity-40 ${lockMethod === method.id ? 'border-orange-500 bg-orange-50 text-orange-600' : 'border-gray-200 bg-white text-gray-600 hover:bg-orange-50'}`}>
+                        <button key={method.id} type="button" disabled={method.disabled} onClick={() => setLockMethod(method.id)} className={`flex flex-col items-center gap-2 rounded-xl border p-4 text-sm font-bold transition-all disabled:opacity-40 ${lockMethod === method.id ? 'border-orange-500 bg-orange-50 text-orange-600 shadow-[0_0_15px_rgba(249,115,22,0.15)]' : 'border-gray-200 bg-white text-gray-600 hover:bg-orange-50'}`}>
                           <method.icon size={22} /> {method.label}
                         </button>
                       ))}
                     </div>
-                    {(lockMethod === 'pin' || lockMethod === 'fingerprint') && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">PIN</label>
-                          <input type="password" inputMode="numeric" maxLength={6} value={lockPin} onChange={(e) => setLockPin(e.target.value.replace(/\D/g, '').slice(0, 6))} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Confirm PIN</label>
-                          <input type="password" inputMode="numeric" maxLength={6} value={lockConfirmPin} onChange={(e) => setLockConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
+
+                    <div className="space-y-4 pt-4 border-t border-gray-100">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Set / Change 6-Digit PIN (Fallback)</label>
+                        <div className="grid grid-cols-2 gap-4">
+                          <input type="password" inputMode="numeric" placeholder="Enter PIN" maxLength={6} value={lockPin} onChange={(e) => setLockPin(e.target.value.replace(/\D/g, '').slice(0, 6))} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none font-black tracking-widest placeholder:font-normal placeholder:tracking-normal text-center" />
+                          <input type="password" inputMode="numeric" placeholder="Confirm PIN" maxLength={6} value={lockConfirmPin} onChange={(e) => setLockConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))} className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none font-black tracking-widest placeholder:font-normal placeholder:tracking-normal text-center" />
                         </div>
                       </div>
-                    )}
-                    <button type="button" onClick={handleSaveAppLock} disabled={loading} className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl shadow-sm">Save App Lock</button>
+
+                      <div className="pt-4 space-y-4 border-t border-gray-100">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-semibold text-gray-700">Auto Lock Timeout (Minutes)</label>
+                          <input type="number" min="0" max="60" value={inactivityMinutes} onChange={(e) => setInactivityMinutes(parseInt(e.target.value) || 0)} className="w-20 px-3 py-1.5 border border-gray-200 rounded-xl text-center focus:ring-2 focus:ring-orange-500 outline-none" />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-semibold text-gray-700">Unlock Vibration</label>
+                          <label className="inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked={vibrate} onChange={(e) => setVibrate(e.target.checked)} className="sr-only peer" />
+                            <span className="h-5 w-9 rounded-full bg-gray-200 peer-checked:bg-orange-500 after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full relative"></span>
+                          </label>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-semibold text-gray-700">Lock Immediately After Logout</label>
+                          <label className="inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked={lockOnLogout} onChange={(e) => setLockOnLogout(e.target.checked)} className="sr-only peer" />
+                            <span className="h-5 w-9 rounded-full bg-gray-200 peer-checked:bg-orange-500 after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full relative"></span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button type="button" onClick={handleSaveAppLock} disabled={loading} className="w-full mt-4 px-6 py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-black uppercase tracking-wider text-sm rounded-xl shadow-lg shadow-orange-500/30 transition-all active:scale-[0.98]">Save Security Settings</button>
                   </div>
                 )}
               </section>

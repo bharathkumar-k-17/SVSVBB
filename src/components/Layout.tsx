@@ -11,8 +11,10 @@ import {
 } from 'lucide-react';
 import { InstallPrompt } from './InstallPrompt';
 import { AppLock } from './AppLock';
+import { AppLockSetupPopup } from './AppLockSetupPopup';
 import { subscribeToUnreadCount } from '../lib/notifications';
 import { useGlobalLogo } from '../hooks/useGlobalLogo';
+import { useAppLockStore } from '../store/appLockStore';
 
 const BASE_NAV_ITEMS = [
   { path: '/dashboard',  label: 'Dashboard',          icon: LayoutDashboard },
@@ -34,6 +36,13 @@ export function Layout() {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const { checkSetupStatus } = useAppLockStore();
+
+  useEffect(() => {
+    if (appUser?.id) {
+      checkSetupStatus(appUser.id);
+    }
+  }, [appUser?.id, checkSetupStatus]);
 
   const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
   const isVolunteer = appUser?.role === 'volunteer';
@@ -318,6 +327,7 @@ export function Layout() {
       
       <InstallPrompt />
       <AppLock />
+      <AppLockSetupPopup />
     </div>
   );
 }

@@ -8,30 +8,39 @@ export interface AppLockConfig {
   inactivityMinutes: number;
   fingerprintEnabled?: boolean;
   webauthnCredentialId?: string;
+  vibrate: boolean;
+  sound: boolean;
+  lockOnLogout: boolean;
   updatedAt: number;
 }
 
-export const APP_LOCK_STORAGE_KEY = 'svsvbb_app_lock_config';
+export const getAppLockStorageKey = (userId: string) => `svsvbb_app_lock_config_${userId}`;
 
 export const defaultAppLockConfig: AppLockConfig = {
   enabled: false,
   method: 'pin',
-  inactivityMinutes: 5,
+  inactivityMinutes: 2,
+  vibrate: true,
+  sound: false,
+  lockOnLogout: true,
   updatedAt: Date.now(),
 };
 
-export const loadAppLockConfig = (): AppLockConfig => {
+export const loadAppLockConfig = (userId?: string): AppLockConfig => {
+  if (!userId) return defaultAppLockConfig;
   try {
-    const raw = localStorage.getItem(APP_LOCK_STORAGE_KEY);
+    const raw = localStorage.getItem(getAppLockStorageKey(userId));
     return raw ? { ...defaultAppLockConfig, ...JSON.parse(raw) } : defaultAppLockConfig;
   } catch {
     return defaultAppLockConfig;
   }
 };
 
-export const saveAppLockConfig = (config: AppLockConfig) => {
-  localStorage.setItem(APP_LOCK_STORAGE_KEY, JSON.stringify({ ...config, updatedAt: Date.now() }));
-  window.dispatchEvent(new Event('app-lock-config-change'));
+export const saveAppLockConfig = (userId: string, config: AppLockConfig) => {
+  if (!userId) return;
+  const newConfig = { ...config, updatedAt: Date.now() };
+  localStorage.setItem(getAppLockStorageKey(userId), JSON.stringify(newConfig));
+  window.dispatchEvent(new CustomEvent('app-lock-config-change', { detail: { userId, config: newConfig } }));
 };
 
 export const hashSecret = async (secret: string) => {
@@ -53,13 +62,13 @@ export const hasPlatformAuthenticator = async () => {
   }
 };
 
-export const registerBiometric = async (): Promise<string | null> => {
+export const registerBiometric = async (userId: string): Promise<string | null> => {
   try {
     const options: PublicKeyCredentialCreationOptions = {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       rp: { name: "SVSVBB", id: window.location.hostname },
       user: {
-        id: crypto.getRandomValues(new Uint8Array(16)),
+        id: new TextEncoder().encode(userId.padEnd(16, '0').slice(0, 16)),
         name: "user@svsvbb.app",
         displayName: "SVSVBB User"
       },

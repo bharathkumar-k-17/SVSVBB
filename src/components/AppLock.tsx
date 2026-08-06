@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Fingerprint, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Lock, ShieldAlert } from 'lucide-react';
 import {
   AppLockConfig,
   hasPlatformAuthenticator,
@@ -12,47 +12,80 @@ import { useAuthStore } from '../store/authStore';
 const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
 
 export function AppLock() {
-  const { supabaseUser } = useAuthStore();
-  const [config, setConfig] = useState<AppLockConfig>(() => loadAppLockConfig());
-  const [locked, setLocked] = useState(() => Boolean(supabaseUser && loadAppLockConfig().enabled));
+  const { supabaseUser, signOut } = useAuthStore();
+  const userId = supabaseUser?.id;
+  const [config, setConfig] = useState<AppLockConfig | null>(null);
+  const [locked, setLocked] = useState(false);
+  
+  const [showPinPad, setShowPinPad] = useState(false);
   const [pin, setPin] = useState('');
-  const [pattern, setPattern] = useState<number[]>([]);
   const [error, setError] = useState('');
+  
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutEndTime, setLockoutEndTime] = useState<number | null>(null);
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+  
   const [fingerprintSupported, setFingerprintSupported] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     hasPlatformAuthenticator().then(setFingerprintSupported);
   }, []);
 
   useEffect(() => {
-    const syncConfig = () => {
-      const nextConfig = loadAppLockConfig();
-      setConfig(nextConfig);
-      if (supabaseUser && nextConfig.enabled) setLocked(true);
-    };
-    window.addEventListener('app-lock-config-change', syncConfig);
-    window.addEventListener('storage', syncConfig);
-    return () => {
-      window.removeEventListener('app-lock-config-change', syncConfig);
-      window.removeEventListener('storage', syncConfig);
-    };
-  }, [supabaseUser]);
-
-  useEffect(() => {
-    if (supabaseUser && config.enabled) {
-      setLocked(true);
-      setPin('');
-      setPattern([]);
-      if (config.method === 'fingerprint' && config.fingerprintEnabled) {
-         handleFingerprint();
-      }
-    } else {
+    if (!userId) {
       setLocked(false);
+      setConfig(null);
+      return;
     }
-  }, [supabaseUser?.id, config.enabled]);
+    const cfg = loadAppLockConfig(userId);
+    setConfig(cfg);
+    if (cfg.enabled) {
+      setLocked(true);
+    }
+  }, [userId]);
 
   useEffect(() => {
-    if (!supabaseUser || !config.enabled || locked) return;
+    const syncConfig = (e: any) => {
+      if (e.detail?.userId === userId && e.detail?.config) {
+        const newConfig = e.detail.config;
+        setConfig(newConfig);
+        if (newConfig.enabled === false) {
+          setLocked(false);
+          setShowPinPad(false);
+          setPin('');
+          setError('');
+          setFailedAttempts(0);
+          setLockoutEndTime(null);
+          setIsVerifying(false);
+        }
+      }
+    };
+    window.addEventListener('app-lock-config-change', syncConfig as EventListener);
+    return () => window.removeEventListener('app-lock-config-change', syncConfig as EventListener);
+  }, [userId]);
+
+  // Lockout timer effect
+  useEffect(() => {
+    if (lockoutEndTime) {
+      const interval = setInterval(() => {
+        const remaining = Math.ceil((lockoutEndTime - Date.now()) / 1000);
+        if (remaining <= 0) {
+          setLockoutEndTime(null);
+          setLockoutRemaining(0);
+          setFailedAttempts(0); // reset attempts after lockout
+          setError('');
+        } else {
+          setLockoutRemaining(remaining);
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [lockoutEndTime]);
+
+  useEffect(() => {
+    if (!userId || !config?.enabled || locked) return;
 
     let timeoutId = window.setTimeout(() => setLocked(true), config.inactivityMinutes * 60 * 1000);
     const resetTimer = () => {
@@ -62,7 +95,6 @@ export function AppLock() {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-         // Lock immediately when app goes to background
          setLocked(true);
       }
     };
@@ -75,135 +107,153 @@ export function AppLock() {
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [config.enabled, config.inactivityMinutes, locked, supabaseUser]);
+  }, [config?.enabled, config?.inactivityMinutes, locked, userId]);
 
-  const unlock = useCallback(() => {
-    setLocked(false);
-    setPin('');
-    setPattern([]);
-    setError('');
-  }, []);
-
-  const verifyPin = async (candidate: string) => {
-    if (!config.pinHash) {
-      setError('App lock PIN is not configured.');
-      return;
+  const triggerVibrate = () => {
+    if (config?.vibrate && navigator.vibrate) {
+      navigator.vibrate(50);
     }
-
-    if ((await hashSecret(candidate)) === config.pinHash) {
-      unlock();
-      return;
-    }
-
-    setError('Incorrect PIN.');
-    setPin('');
   };
 
-  const verifyPattern = async (candidate: number[]) => {
-    if (!config.patternHash) {
-      setError('Pattern is not configured.');
+  const unlockSuccess = useCallback(() => {
+    triggerVibrate();
+    setUnlocking(true);
+    setTimeout(() => {
+      setLocked(false);
+      setPin('');
+      setShowPinPad(false);
+      setError('');
+      setFailedAttempts(0);
+      setUnlocking(false);
+      setIsVerifying(false);
+    }, 300);
+  }, [config]);
+
+  const handleFailedAttempt = () => {
+    triggerVibrate();
+    const attempts = failedAttempts + 1;
+    setFailedAttempts(attempts);
+    setPin('');
+    setIsVerifying(false);
+    
+    if (attempts >= 5) {
+      if (lockoutEndTime) {
+        // Second time failing 5 times -> require password login (force logout)
+        signOut();
+      } else {
+        // First time failing 5 times -> 30s lockout
+        setLockoutEndTime(Date.now() + 30000);
+        setError('Too many failed attempts. Try again in 30 seconds.');
+      }
+    } else {
+      setError(`Incorrect PIN. ${5 - attempts} attempts remaining.`);
+    }
+  };
+
+  const verifyPin = async (candidate: string) => {
+    if (!config?.pinHash) {
+      setError('App lock PIN is not configured.');
+      setIsVerifying(false);
       return;
     }
-
-    if ((await hashSecret(candidate.join('-'))) === config.patternHash) {
-      unlock();
-      return;
+    if ((await hashSecret(candidate)) === config.pinHash) {
+      unlockSuccess();
+    } else {
+      handleFailedAttempt();
     }
-
-    setError('Incorrect pattern.');
-    setPattern([]);
   };
 
   const handlePinInput = (digit: string) => {
+    if (lockoutEndTime || isVerifying || pin.length >= 6) return;
     const nextPin = `${pin}${digit}`.slice(0, 6);
     setPin(nextPin);
-    if (nextPin.length >= 4) {
+    
+    // Auto-verify ONLY when exactly 6 digits are entered
+    if (nextPin.length === 6) {
+      setIsVerifying(true);
       verifyPin(nextPin);
     }
   };
 
-  const handlePatternInput = (point: number) => {
-    if (pattern.includes(point)) return;
-    const nextPattern = [...pattern, point];
-    setPattern(nextPattern);
-    if (nextPattern.length >= 4) {
-      verifyPattern(nextPattern);
+  const handleUnlockClick = async () => {
+    if (lockoutEndTime) return;
+    
+    // Prioritize Device Authentication
+    if (fingerprintSupported && (config?.method === 'fingerprint' || config?.fingerprintEnabled)) {
+      try {
+        const success = await verifyBiometric();
+        if (success) {
+          unlockSuccess();
+          return;
+        }
+      } catch (e) {
+        console.error("Device auth error:", e);
+      }
     }
+    
+    // Fallback to PIN
+    setShowPinPad(true);
   };
 
-  const handleFingerprint = async () => {
-    if (!fingerprintSupported || !config.fingerprintEnabled) {
-      setError('Fingerprint is not available on this device.');
-      return;
-    }
-    setError('');
-    const success = await verifyBiometric();
-    if (success) {
-      unlock();
-    } else {
-      setError('Fingerprint verification failed. Please use PIN or Pattern.');
-    }
-  };
-
-  const methodLabel = useMemo(() => {
-    if (config.method === 'fingerprint') return 'Fingerprint';
-    if (config.method === 'pattern') return 'Pattern';
-    return 'PIN';
-  }, [config.method]);
-
-  if (!supabaseUser || !config.enabled || !locked) return null;
+  if (!userId || !config?.enabled || !locked) return null;
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-stone-950/85 p-5 backdrop-blur-xl">
-      <div className="w-full max-w-sm rounded-2xl border border-orange-200/30 bg-white p-6 shadow-2xl">
-        <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-100 text-orange-700">
-            <LockKeyhole size={30} />
+    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-gray-950 via-stone-900 to-black p-5 text-white">
+      <div className={`flex flex-col items-center text-center transition-transform duration-300 ${unlocking ? 'scale-110 opacity-0' : 'scale-100 opacity-100'}`}>
+        
+        {/* Premium Branding */}
+        <div className="mb-8 flex flex-col items-center">
+          <div className="mb-6 h-28 w-28 overflow-hidden rounded-full border-4 border-orange-500/30 bg-white p-1 shadow-[0_0_40px_rgba(249,115,22,0.2)]">
+            <img src="/logo.jpg" alt="SVSVBB Logo" className="h-full w-full object-cover rounded-full" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           </div>
-          <h2 className="text-xl font-black text-gray-950">App Locked</h2>
-          <p className="mt-1 text-xs font-bold uppercase tracking-widest text-orange-600">{methodLabel} Required</p>
+          <h1 className="bg-gradient-to-r from-orange-400 to-orange-200 bg-clip-text text-2xl font-black text-transparent md:text-3xl">
+            Sree Vara Sidhi Vinayaka<br />Baktha Brundam
+          </h1>
+          <p className="mt-2 text-sm font-bold uppercase tracking-[0.3em] text-orange-500/70">
+            Since 2008
+          </p>
         </div>
 
-        {config.method === 'pattern' ? (
-          <div className="mx-auto grid w-56 grid-cols-3 gap-4">
-            {Array.from({ length: 9 }, (_, index) => {
-              const point = index + 1;
-              const active = pattern.includes(point);
-              return (
-                <button
-                  key={point}
-                  type="button"
-                  onClick={() => handlePatternInput(point)}
-                  className={`flex h-14 w-14 items-center justify-center rounded-full border-2 transition-all ${
-                    active
-                      ? 'border-orange-600 bg-orange-500 text-white shadow-lg'
-                      : 'border-gray-200 bg-gray-50 text-gray-400 hover:border-orange-300'
-                  }`}
-                  aria-label={`Pattern point ${point}`}
-                >
-                  <ShieldCheck size={18} />
-                </button>
-              );
-            })}
+        {/* Lockout Message */}
+        {lockoutEndTime ? (
+          <div className="mt-8 flex flex-col items-center animate-in fade-in zoom-in duration-300">
+            <ShieldAlert size={48} className="mb-4 text-red-500" />
+            <p className="text-lg font-bold text-red-400">App Locked for {lockoutRemaining}s</p>
+            <p className="mt-2 text-sm text-gray-400">Too many failed attempts.</p>
           </div>
+        ) : !showPinPad ? (
+          /* Main Unlock Button */
+          <button
+            onClick={handleUnlockClick}
+            className="group relative mt-12 flex h-16 items-center gap-3 overflow-hidden rounded-full bg-orange-600 pl-6 pr-8 font-bold text-white shadow-lg shadow-orange-900/50 transition-all hover:bg-orange-500 active:scale-95"
+          >
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] transition-transform duration-1000 group-hover:translate-x-[100%]" />
+            <Lock className="h-6 w-6" />
+            <span className="text-lg tracking-wide">Unlock App</span>
+          </button>
         ) : (
-          <div className="space-y-5">
-            <div className="flex justify-center gap-2">
+          /* PIN Pad Fallback */
+          <div className="mt-8 w-full max-w-xs animate-in slide-in-from-bottom-8 fade-in duration-300">
+            <div className="mb-6 flex justify-center gap-3">
               {Array.from({ length: 6 }, (_, index) => (
-                <span
+                <div
                   key={index}
-                  className={`h-3 w-3 rounded-full ${index < pin.length ? 'bg-orange-600' : 'bg-gray-200'}`}
+                  className={`h-4 w-4 rounded-full border-2 transition-all duration-200 ${
+                    index < pin.length
+                      ? 'border-orange-500 bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)]'
+                      : 'border-gray-600 bg-transparent'
+                  }`}
                 />
               ))}
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              {'123456789'.split('').map((digit) => (
+            <div className="grid grid-cols-3 gap-4">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
                 <button
                   key={digit}
                   type="button"
                   onClick={() => handlePinInput(digit)}
-                  className="h-14 rounded-2xl bg-gray-100 text-lg font-black text-gray-900 transition-colors hover:bg-orange-100"
+                  className="flex h-16 items-center justify-center rounded-full bg-white/5 text-2xl font-light text-white backdrop-blur-sm transition-all hover:bg-white/10 active:scale-90"
                 >
                   {digit}
                 </button>
@@ -211,33 +261,30 @@ export function AppLock() {
               <button
                 type="button"
                 onClick={() => setPin(pin.slice(0, -1))}
-                className="h-14 rounded-2xl bg-gray-100 text-sm font-black text-gray-700 transition-colors hover:bg-gray-200"
+                className="flex h-16 items-center justify-center rounded-full bg-white/5 text-sm font-bold uppercase tracking-wider text-gray-400 backdrop-blur-sm transition-all hover:bg-white/10 hover:text-white active:scale-90"
               >
-                Clear
+                Del
               </button>
               <button
                 type="button"
                 onClick={() => handlePinInput('0')}
-                className="h-14 rounded-2xl bg-gray-100 text-lg font-black text-gray-900 transition-colors hover:bg-orange-100"
+                className="flex h-16 items-center justify-center rounded-full bg-white/5 text-2xl font-light text-white backdrop-blur-sm transition-all hover:bg-white/10 active:scale-90"
               >
                 0
               </button>
               <button
                 type="button"
-                onClick={handleFingerprint}
-                className="flex h-14 items-center justify-center rounded-2xl bg-orange-600 text-white transition-colors hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!fingerprintSupported || !config.fingerprintEnabled}
-                aria-label="Fingerprint unlock"
+                onClick={() => setShowPinPad(false)}
+                className="flex h-16 items-center justify-center rounded-full bg-white/5 text-sm font-bold uppercase tracking-wider text-gray-400 backdrop-blur-sm transition-all hover:bg-white/10 hover:text-white active:scale-90"
               >
-                {config.method === 'fingerprint' ? <Fingerprint size={22} /> : <KeyRound size={22} />}
+                Back
               </button>
             </div>
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-bold text-red-700">
-            {error}
+            {error && (
+              <p className="mt-6 text-center text-sm font-medium text-red-400 animate-in fade-in">
+                {error}
+              </p>
+            )}
           </div>
         )}
       </div>
