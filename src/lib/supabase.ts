@@ -206,10 +206,7 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      generate_receipt_no: {
-        Args: { date_str: string };
-        Returns: string;
-      };
+      [_ in never]: never;
     };
     Enums: {
       [_ in never]: never;

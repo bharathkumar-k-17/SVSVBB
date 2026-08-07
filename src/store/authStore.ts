@@ -52,11 +52,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   appUser: null,
   loading: true,
 
-  setSession: (session) =>
+  setSession: (session) => {
+    if (session?.user?.id) {
+      localStorage.setItem('svsvbb_last_user_id', session.user.id);
+    } else {
+      localStorage.removeItem('svsvbb_last_user_id');
+    }
     set({
       session,
       supabaseUser: session?.user ?? null,
-    }),
+    });
+  },
 
   fetchAppUser: async (userId: string) => {
     const currentState = get();

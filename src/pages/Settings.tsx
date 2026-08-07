@@ -607,8 +607,18 @@ export function Settings() {
 
                       <div className="pt-4 space-y-4 border-t border-gray-100">
                         <div className="flex items-center justify-between">
-                          <label className="text-sm font-semibold text-gray-700">Auto Lock Timeout (Minutes)</label>
-                          <input type="number" min="0" max="60" value={inactivityMinutes} onChange={(e) => setInactivityMinutes(parseInt(e.target.value) || 0)} className="w-20 px-3 py-1.5 border border-gray-200 rounded-xl text-center focus:ring-2 focus:ring-orange-500 outline-none" />
+                          <label className="text-sm font-semibold text-gray-700">Auto Lock Timeout</label>
+                          <select 
+                            value={inactivityMinutes} 
+                            onChange={(e) => setInactivityMinutes(parseFloat(e.target.value))} 
+                            className="px-3 py-1.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white text-sm"
+                          >
+                            <option value={0}>Immediately</option>
+                            <option value={0.5}>30 seconds</option>
+                            <option value={1}>1 minute</option>
+                            <option value={2}>2 minutes</option>
+                            <option value={5}>5 minutes</option>
+                          </select>
                         </div>
 
                         <div className="flex items-center justify-between">

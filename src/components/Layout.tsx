@@ -10,7 +10,6 @@ import {
   CalendarDays, Bell, CheckCheck, MessageSquareHeart
 } from 'lucide-react';
 import { InstallPrompt } from './InstallPrompt';
-import { AppLock } from './AppLock';
 import { AppLockSetupPopup } from './AppLockSetupPopup';
 import { subscribeToUnreadCount } from '../lib/notifications';
 import { useGlobalLogo } from '../hooks/useGlobalLogo';
@@ -326,7 +325,6 @@ export function Layout() {
       </div>
       
       <InstallPrompt />
-      <AppLock />
       <AppLockSetupPopup />
     </div>
   );

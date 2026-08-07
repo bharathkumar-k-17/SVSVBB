@@ -1,5 +1,6 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
+import { generateReceiptNo, getDynamicReceiptPrefix } from "../_shared/receipt.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -79,32 +80,17 @@ export default {
         }
 
         // 3. Generate Receipt Number
-        const submissionDate = created_at ? new Date(created_at) : new Date();
-        const yy = submissionDate.getFullYear().toString().slice(-2);
-        const mm = (submissionDate.getMonth() + 1).toString().padStart(2, '0');
-        const dd = submissionDate.getDate().toString().padStart(2, '0');
-        const dateStr = `${yy}${mm}${dd}`;
-
-        let receiptNo = `G${dateStr}${Date.now().toString().slice(-4)}`; // Fallback
-
-        const { data: rpcData, error: rpcError } = await ctx.supabaseAdmin.rpc('generate_receipt_no', {
-          date_str: dateStr,
-        });
-
-        if (!rpcError && rpcData) {
-          receiptNo = rpcData;
+        const currentYearStr = new Date().getFullYear().toString().slice(-2);
+        const counterKey = `receipt_${currentYearStr}`;
+        const { data: existing } = await ctx.supabaseAdmin.from('counters').select('count').eq('id', counterKey).single();
+        let currentCount = 1;
+        if (existing) {
+          currentCount = (existing.count || 0) + 1;
+          await ctx.supabaseAdmin.from('counters').update({ count: currentCount }).eq('id', counterKey);
         } else {
-          const counterKey = `receipt_${dateStr}`;
-          const { data: existing } = await ctx.supabaseAdmin.from('counters').select('count').eq('id', counterKey).single();
-          let currentCount = 1;
-          if (existing) {
-            currentCount = (existing.count || 0) + 1;
-            await ctx.supabaseAdmin.from('counters').update({ count: currentCount }).eq('id', counterKey);
-          } else {
-            await ctx.supabaseAdmin.from('counters').insert({ id: counterKey, count: 1 });
-          }
-          receiptNo = `G${dateStr}${currentCount.toString().padStart(3, '0')}`;
+          await ctx.supabaseAdmin.from('counters').insert({ id: counterKey, count: 1 });
         }
+        const receiptNo = generateReceiptNo(currentCount);
 
         const pending = tAmt - pAmt;
         const finalStatus = payment_status || (pending === 0 ? 'PAID' : (pAmt > 0 ? 'PARTIAL' : 'UNPAID'));

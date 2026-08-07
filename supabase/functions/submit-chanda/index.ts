@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.11.0";
+import { generateReceiptNo, getDynamicReceiptPrefix } from "../_shared/receipt.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,33 +74,17 @@ serve(async (req) => {
     }
 
     // 3. Generate Receipt Number
-    const submissionDate = date ? new Date(date) : new Date();
-    const yy = submissionDate.getFullYear().toString().slice(-2);
-    const mm = (submissionDate.getMonth() + 1).toString().padStart(2, '0');
-    const dd = submissionDate.getDate().toString().padStart(2, '0');
-    const dateStr = `${yy}${mm}${dd}`;
-
-    let receiptNo = `G${dateStr}${Date.now().toString().slice(-4)}`; // Fallback
-
-    const { data: rpcData, error: rpcError } = await supabase.rpc('generate_receipt_no', {
-      date_str: dateStr,
-    });
-
-    if (!rpcError && rpcData) {
-      receiptNo = rpcData;
+    const currentYearStr = new Date().getFullYear().toString().slice(-2);
+    const counterKey = `receipt_${currentYearStr}`;
+    const { data: existing } = await supabase.from('counters').select('count').eq('id', counterKey).single();
+    let currentCount = 1;
+    if (existing) {
+      currentCount = (existing.count || 0) + 1;
+      await supabase.from('counters').update({ count: currentCount }).eq('id', counterKey);
     } else {
-      // Fallback manual counter if RPC fails
-      const counterKey = `receipt_${dateStr}`;
-      const { data: existing } = await supabase.from('counters').select('count').eq('id', counterKey).single();
-      let currentCount = 1;
-      if (existing) {
-        currentCount = (existing.count || 0) + 1;
-        await supabase.from('counters').update({ count: currentCount }).eq('id', counterKey);
-      } else {
-        await supabase.from('counters').insert({ id: counterKey, count: 1 });
-      }
-      receiptNo = `G${dateStr}${currentCount.toString().padStart(3, '0')}`;
+      await supabase.from('counters').insert({ id: counterKey, count: 1 });
     }
+    const receiptNo = generateReceiptNo(currentCount);
 
     // 4. Insert Devotee
     const pending = tAmt - pAmt;

@@ -5,6 +5,8 @@ import App from './App.tsx'
 import './index.css'
 
 
+import { GlobalAppLockWrapper } from './components/GlobalAppLockWrapper'
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -17,7 +19,9 @@ const queryClient = new QueryClient({
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
         <QueryClientProvider client={queryClient}>
-            <App />
+            <GlobalAppLockWrapper>
+                <App />
+            </GlobalAppLockWrapper>
         </QueryClientProvider>
     </React.StrictMode>,
 )

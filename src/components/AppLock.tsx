@@ -11,12 +11,8 @@ import { useAuthStore } from '../store/authStore';
 
 const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
 
-export function AppLock() {
-  const { supabaseUser, signOut } = useAuthStore();
-  const userId = supabaseUser?.id;
-  const [config, setConfig] = useState<AppLockConfig | null>(null);
-  const [locked, setLocked] = useState(false);
-  
+export function AppLock({ userId, config, onUnlock }: { userId: string, config: AppLockConfig, onUnlock: () => void }) {
+  const { signOut } = useAuthStore();
   const [showPinPad, setShowPinPad] = useState(false);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -32,39 +28,6 @@ export function AppLock() {
   useEffect(() => {
     hasPlatformAuthenticator().then(setFingerprintSupported);
   }, []);
-
-  useEffect(() => {
-    if (!userId) {
-      setLocked(false);
-      setConfig(null);
-      return;
-    }
-    const cfg = loadAppLockConfig(userId);
-    setConfig(cfg);
-    if (cfg.enabled) {
-      setLocked(true);
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    const syncConfig = (e: any) => {
-      if (e.detail?.userId === userId && e.detail?.config) {
-        const newConfig = e.detail.config;
-        setConfig(newConfig);
-        if (newConfig.enabled === false) {
-          setLocked(false);
-          setShowPinPad(false);
-          setPin('');
-          setError('');
-          setFailedAttempts(0);
-          setLockoutEndTime(null);
-          setIsVerifying(false);
-        }
-      }
-    };
-    window.addEventListener('app-lock-config-change', syncConfig as EventListener);
-    return () => window.removeEventListener('app-lock-config-change', syncConfig as EventListener);
-  }, [userId]);
 
   // Lockout timer effect
   useEffect(() => {
@@ -84,30 +47,7 @@ export function AppLock() {
     }
   }, [lockoutEndTime]);
 
-  useEffect(() => {
-    if (!userId || !config?.enabled || locked) return;
 
-    let timeoutId = window.setTimeout(() => setLocked(true), config.inactivityMinutes * 60 * 1000);
-    const resetTimer = () => {
-      window.clearTimeout(timeoutId);
-      timeoutId = window.setTimeout(() => setLocked(true), config.inactivityMinutes * 60 * 1000);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-         setLocked(true);
-      }
-    };
-
-    activityEvents.forEach((eventName) => window.addEventListener(eventName, resetTimer, { passive: true }));
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [config?.enabled, config?.inactivityMinutes, locked, userId]);
 
   const triggerVibrate = () => {
     if (config?.vibrate && navigator.vibrate) {
@@ -119,15 +59,9 @@ export function AppLock() {
     triggerVibrate();
     setUnlocking(true);
     setTimeout(() => {
-      setLocked(false);
-      setPin('');
-      setShowPinPad(false);
-      setError('');
-      setFailedAttempts(0);
-      setUnlocking(false);
-      setIsVerifying(false);
+      onUnlock();
     }, 300);
-  }, [config]);
+  }, [config, onUnlock]);
 
   const handleFailedAttempt = () => {
     triggerVibrate();
@@ -195,7 +129,7 @@ export function AppLock() {
     setShowPinPad(true);
   };
 
-  if (!userId || !config?.enabled || !locked) return null;
+
 
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-gray-950 via-stone-900 to-black p-5 text-white">
@@ -207,7 +141,7 @@ export function AppLock() {
             <img src="/logo.jpg" alt="SVSVBB Logo" className="h-full w-full object-cover rounded-full" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
           </div>
           <h1 className="bg-gradient-to-r from-orange-400 to-orange-200 bg-clip-text text-2xl font-black text-transparent md:text-3xl">
-            Sree Vara Sidhi Vinayaka<br />Baktha Brundam
+            శ్రీ వరసిద్ధి వినాయక భక్త బృందం
           </h1>
           <p className="mt-2 text-sm font-bold uppercase tracking-[0.3em] text-orange-500/70">
             Since 2008

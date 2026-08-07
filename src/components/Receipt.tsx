@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { QRCodeSVG } from 'qrcode.react';
 import { Download, Printer, Share2, ImageIcon, Loader2 } from 'lucide-react';
+import { getDynamicReceiptPrefix } from '../lib/receipt';
 import toast from 'react-hot-toast';
 import { maskPhoneNumber } from '../lib/privacy';
 import { supabase } from '../lib/supabase';
@@ -104,7 +105,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
     /* ─ Derived values ─ */
     const createdAt   = !isBlank && data?.createdAt ? new Date(data.createdAt) : new Date();
     const displayYear = currentYear ?? data?.year ?? createdAt.getFullYear();
-    const receiptNo   = isBlank ? `GSB-${displayYear}-____` : (data?.receiptNo || `GSB-${displayYear}-0001`);
+    const receiptNo   = isBlank ? `${getDynamicReceiptPrefix()}___` : (data?.receiptNo || `${getDynamicReceiptPrefix()}001`);
     const totalAmt    = Number(data?.totalAmount ?? 0);
     const paidAmt     = Number(data?.paidAmount ?? 0);
     const pendingAmt  = Math.max(Number(data?.pendingAmount ?? (totalAmt - paidAmt)), 0);

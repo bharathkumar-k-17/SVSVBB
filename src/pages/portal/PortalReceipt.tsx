@@ -5,12 +5,15 @@ import { supabase } from '../../lib/supabase';
 import { Receipt } from '../../components/Receipt';
 import { usePortalStore } from '../../store/portalStore';
 import { normalizePhoneDigits } from '../../lib/privacy';
+import { getDynamicReceiptPrefix } from '../../lib/receipt';
 
 export function PortalReceipt() {
   const { settings } = usePortalStore();
   const { id } = useParams();
   const navigate = useNavigate();
-  const [receiptNo, setReceiptNo] = useState('');
+  const prefix = getDynamicReceiptPrefix();
+  
+  const [receiptSuffix, setReceiptSuffix] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -59,10 +62,12 @@ export function PortalReceipt() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!receiptNo.trim() || !phone.trim()) {
+    if (!receiptSuffix.trim() || !phone.trim()) {
       setError('Please enter both Receipt Number and Phone Number.');
       return;
     }
+
+    const fullReceiptNo = `${prefix}${receiptSuffix.trim()}`;
 
     setLoading(true);
     setError('');
@@ -70,7 +75,7 @@ export function PortalReceipt() {
 
     try {
       const { data, error: rpcError } = await supabase.rpc('lookup_receipt', {
-        receipt_no: receiptNo.trim().toUpperCase(),
+        receipt_no: fullReceiptNo.toUpperCase(),
         phone_number: normalizePhoneDigits(phone)
       });
 
@@ -120,14 +125,17 @@ export function PortalReceipt() {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Receipt Number</label>
-            <input
-              type="text"
-              required
-              value={receiptNo}
-              onChange={(e) => setReceiptNo(e.target.value.toUpperCase())}
-              placeholder="e.g. G240915001"
-              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-sm font-mono tracking-wider"
-            />
+            <div className="relative flex items-center">
+              <span className="absolute left-4 font-mono font-bold text-gray-500">{prefix}</span>
+              <input
+                type="text"
+                required
+                value={receiptSuffix}
+                onChange={(e) => setReceiptSuffix(e.target.value.toUpperCase())}
+                placeholder="001"
+                className="w-full pl-14 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-sm font-mono tracking-wider"
+              />
+            </div>
           </div>
 
           <div>
@@ -169,7 +177,7 @@ export function PortalReceipt() {
                   navigate('/portal/receipt');
                 } else {
                   setReceiptData(null); 
-                  setReceiptNo(''); 
+                  setReceiptSuffix(''); 
                   setPhone(''); 
                 }
               }}
