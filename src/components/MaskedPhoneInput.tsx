@@ -20,10 +20,17 @@ export function MaskedPhoneInput({
   name,
   disabled,
 }: MaskedPhoneInputProps) {
-  const digits = normalizePhoneDigits(value);
+  const digits = normalizePhoneDigits(value, 10);
 
   const pushDigits = (next: string) => {
-    onChange(normalizePhoneDigits(next));
+    onChange(normalizePhoneDigits(next, 10));
+  };
+
+  const getDisplayValue = (raw: string) => {
+    if (!raw) return '';
+    if (raw.length <= 4) return raw;
+    const numXs = raw.length - 4;
+    return 'X'.repeat(numXs) + raw.slice(numXs);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -66,10 +73,35 @@ export function MaskedPhoneInput({
       inputMode="numeric"
       maxLength={10}
       autoComplete="off"
-      value={digits}
+      value={getDisplayValue(digits)}
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
-      onChange={(event) => pushDigits(event.target.value)}
+      onChange={(event) => {
+        const nativeEvent = event.nativeEvent as InputEvent;
+        const inputType = nativeEvent.inputType;
+        const data = nativeEvent.data;
+
+        if (inputType === 'insertText' && data) {
+          const newDigits = data.replace(/\D/g, '');
+          if (newDigits && digits.length < 10) {
+            pushDigits(digits + newDigits);
+          }
+        } else if (inputType === 'deleteContentBackward') {
+          pushDigits(digits.slice(0, -1));
+        } else {
+          // Fallback for autofill or pasted content that bypasses handlePaste
+          const val = event.target.value;
+          if (!val.includes('X')) {
+            pushDigits(val);
+          } else if (val.length > getDisplayValue(digits).length) {
+            const diff = val.length - getDisplayValue(digits).length;
+            const added = val.slice(-diff).replace(/\D/g, '');
+            if (added && digits.length < 10) {
+              pushDigits(digits + added);
+            }
+          }
+        }
+      }}
       className={className}
       placeholder=""
     />
