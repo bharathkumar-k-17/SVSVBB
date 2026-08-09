@@ -61,6 +61,14 @@ export interface Devotee {
   receiptNo: string;
   createdAt: string;
   updatedAt: string;
+  paidToUserId?: string;
+  paidToName?: string;
+  paidToPhone?: string;
+  paymentProofPath?: string;
+  paymentProofName?: string;
+  paymentProofType?: string;
+  paymentProofUploadedAt?: number;
+  paymentProofStatus?: string;
 }
 
 export interface Payment {

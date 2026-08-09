@@ -39,7 +39,15 @@ export default {
           volunteer_name,
           volunteer_phone,
           created_at,
-          isPortal
+          isPortal,
+          paid_to_user_id,
+          paid_to_name,
+          paid_to_phone,
+          payment_proof_path,
+          payment_proof_name,
+          payment_proof_type,
+          payment_proof_uploaded_at,
+          payment_proof_status
         } = body;
 
         // 2. Validate fields
@@ -55,6 +63,21 @@ export default {
         
         if (tAmt < 0 || pAmt < 0 || pAmt > tAmt) {
           return new Response(JSON.stringify({ error: 'Invalid amounts' }), { 
+            status: 400, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          });
+        }
+
+        // Enterprise Validation
+        if (!paid_to_user_id) {
+          return new Response(JSON.stringify({ error: 'Paid To recipient is required' }), { 
+            status: 400, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          });
+        }
+
+        if (payment_mode === 'UPI' && !payment_proof_path) {
+          return new Response(JSON.stringify({ error: 'Payment proof is required for UPI transactions' }), { 
             status: 400, 
             headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
           });
@@ -112,8 +135,16 @@ export default {
           volunteer_id: volunteer_id || 'portal',
           volunteer_name: volunteer_name || 'Self (Portal)',
           volunteer_phone: volunteer_phone || (phone || ''),
-          created_at: submissionDate.getTime(),
+          created_at: created_at || now,
           receipt_no: receiptNo,
+          paid_to_user_id,
+          paid_to_name,
+          paid_to_phone,
+          payment_proof_path,
+          payment_proof_name,
+          payment_proof_type,
+          payment_proof_uploaded_at,
+          payment_proof_status
         };
 
         const { data: insertedRow, error: insertError } = await ctx.supabaseAdmin
@@ -164,17 +195,20 @@ export default {
         const amountStr = new Intl.NumberFormat('en-IN').format(pAmt);
         let notifType = '';
         let notifMessage = '';
+        const paidToSnippet = paid_to_name ? `\nPaid To: ${paid_to_name}.` : '';
+        const proofSnippet = payment_mode === 'UPI' ? '\nPayment proof submitted.' : '';
+
         if (isPortal) {
           if (pAmt > 0) {
             notifType = 'QR PORTAL · CHANDA';
-            notifMessage = `${name} submitted ₹${amountStr} Chanda via ${payment_mode}.`;
+            notifMessage = `${name} submitted ₹${amountStr} Chanda via ${payment_mode}.${paidToSnippet}${proofSnippet}`;
           } else {
             notifType = 'QR PORTAL · REGISTRATION';
             notifMessage = `${name} completed a new registration.`;
           }
         } else {
           notifType = 'CHANDA ENTRY';
-          notifMessage = `${volunteer_name || 'Volunteer'} added ₹${amountStr} Chanda from ${name || 'Unknown'}.`;
+          notifMessage = `${volunteer_name || 'Volunteer'} added ₹${amountStr} Chanda from ${name || 'Unknown'}.${paidToSnippet}${proofSnippet}`;
         }
 
         await ctx.supabaseAdmin.from('notifications').insert({

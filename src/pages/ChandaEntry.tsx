@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
-import { useDevotees, useAppSettings } from '../hooks/queries';
+import { useDevotees, useAppSettings, useUsers } from '../hooks/queries';
 import { supabase } from '../lib/supabase';
-import { QrCode, Banknote, Save, HeartHandshake, Crown } from 'lucide-react';
+import { QrCode, Banknote, Save, HeartHandshake, Crown, UploadCloud, FileCheck, Trash2 } from 'lucide-react';
 import { Receipt } from '../components/Receipt';
 import { QRCodeSVG } from 'qrcode.react';
 import { formatCurrency } from '../lib/utils';
@@ -34,6 +34,16 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
   const [lastSavedDevotee, setLastSavedDevotee] = useState<any>(null);
   const [upiId, setUpiId] = useState('');
   const [upiPaymentInitiated, setUpiPaymentInitiated] = useState(false);
+
+  // New States for Enterprise Flow
+  const { data: usersData } = useUsers();
+  const [paidToUserId, setPaidToUserId] = useState('');
+  const [paidToSearch, setPaidToSearch] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [paymentProofPath, setPaymentProofPath] = useState('');
 
   const generatePDF = async (receiptNo: string) => {
     const element = document.getElementById('receipt-container');
@@ -70,7 +80,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
     totalAmount: '',
     paidAmount: '',
     donationItem: '',
-    paymentMode: 'Cash' as 'Cash' | 'UPI',
+    paymentMode: '' as 'Cash' | 'UPI' | '',
     gotram: '',
     familyMembersStr: '',
     date: format(new Date(), 'yyyy-MM-dd')
@@ -114,6 +124,49 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
       const pending = tAmt - pAmt;
       const status = pending === 0 ? 'PAID' : (pAmt > 0 ? 'PARTIAL' : 'UNPAID');
 
+      // 1. Centralized Validation (canSubmitChanda logic)
+      if (!paidToUserId) {
+        alert('Please select who the payment was paid to.');
+        setLoading(false);
+        return;
+      }
+      if (formData.paymentMode === 'UPI' && !paymentProofFile && !paymentProofPath) {
+        alert('Please upload your UPI payment proof before registering.');
+        setLoading(false);
+        return;
+      }
+      
+      const paidToUserObj = usersData?.find(u => u.id === paidToUserId);
+      let finalProofPath = paymentProofPath;
+      let proofName = '';
+      let proofType = '';
+
+      // 2. Upload Payment Proof if UPI
+      if (formData.paymentMode === 'UPI' && paymentProofFile) {
+        setIsUploadingProof(true);
+        const fileExt = paymentProofFile.name.split('.').pop();
+        const fileName = `proof-${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const filePath = `${currentYear}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('payment-proofs')
+          .upload(filePath, paymentProofFile);
+
+        setIsUploadingProof(false);
+
+        if (uploadError) {
+          console.error("Upload Error:", uploadError);
+          alert('Payment proof upload failed. Please try again.');
+          setLoading(false);
+          return;
+        }
+
+        finalProofPath = filePath;
+        proofName = paymentProofFile.name;
+        proofType = paymentProofFile.type;
+        setPaymentProofPath(filePath);
+      }
+
       let devoteeId = '';
       let receiptNo = '';
       let createdTime = formData.date ? new Date(formData.date).getTime() : now;
@@ -136,6 +189,16 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
           volunteer_id: isPortal ? 'portal' : (appUser?.email || 'admin'),
           volunteer_name: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
           volunteer_phone: isPortal ? rawPhone : (appUser?.phone || ''),
+          
+          // New Enterprise Fields
+          paid_to_user_id: paidToUserId,
+          paid_to_name: paidToUserObj?.name || '',
+          paid_to_phone: paidToUserObj?.phone || '',
+          payment_proof_path: finalProofPath,
+          payment_proof_name: proofName,
+          payment_proof_type: proofType,
+          payment_proof_uploaded_at: finalProofPath ? now : null,
+          payment_proof_status: finalProofPath ? 'UPI_PAYMENT_PROOF_SUBMITTED' : null,
         }
       });
 
@@ -164,6 +227,10 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
         volunteerPhone: isPortal ? formData.phone : (appUser?.phone || ''),
         createdAt: createdTime,
         receiptNo: receiptNo,
+        paidToUserId: paidToUserId,
+        paidToName: paidToUserObj?.name || '',
+        paidToPhone: paidToUserObj?.phone || '',
+        paymentProofStatus: finalProofPath ? 'UPI_PAYMENT_PROOF_SUBMITTED' : undefined,
       };
       setLastSavedDevotee(savedDevotee);
       setSuccess(true);
@@ -180,12 +247,15 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
         totalAmount: '',
         paidAmount: '',
         donationItem: '',
-        paymentMode: 'Cash',
+        paymentMode: '',
         gotram: '',
         familyMembersStr: '',
         date: format(new Date(), 'yyyy-MM-dd')
       });
       setUpiPaymentInitiated(false);
+      setPaidToUserId('');
+      setPaymentProofFile(null);
+      setPaymentProofPath('');
 
     } catch (error: any) {
       console.error("Error adding devotee: ", error);
@@ -290,7 +360,10 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                  setSuccess(false);
                  setLastSavedDevotee(null);
                  setUpiPaymentInitiated(false);
-                 setFormData({ name: '', phone: '', totalAmount: '', paidAmount: '', donationItem: '', paymentMode: 'Cash', gotram: '', familyMembersStr: '', date: format(new Date(), 'yyyy-MM-dd') });
+                 setPaidToUserId('');
+                 setPaymentProofFile(null);
+                 setPaymentProofPath('');
+                 setFormData({ name: '', phone: '', totalAmount: '', paidAmount: '', donationItem: '', paymentMode: '', gotram: '', familyMembersStr: '', date: format(new Date(), 'yyyy-MM-dd') });
                }}
                className="mt-6 w-full flex items-center justify-center gap-2 py-3 border border-gray-300 rounded-xl shadow-sm bg-white font-bold text-gray-700 hover:bg-gray-50"
             >
@@ -394,6 +467,8 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                   onChange={() => {
                     setFormData({...formData, paymentMode: 'Cash'});
                     setUpiPaymentInitiated(false);
+                    setPaymentProofFile(null);
+                    setPaymentProofPath('');
                   }}
                   className="hidden"
                 />
@@ -418,81 +493,193 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
               </label>
             </div>
             
-            {formData.paymentMode === 'UPI' && (
-              <div className="mt-4 p-5 bg-white border border-orange-200 rounded-xl flex flex-col items-center justify-center text-center">
-                {upiId ? (() => {
-                  const numAmt = Number(formData.paidAmount) || 0;
-                  const upiUrl = `upi://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt > 0 ? numAmt : ''}&cu=INR&tn=Chanda%20Donation`;
-                  
-                  const handleAppSelect = (appName: string) => {
-                    if (numAmt <= 0) {
-                      alert('Enter a valid Paid Amount greater than 0.');
-                      return;
-                    }
-                    let intentUrl = upiUrl;
-                    if (appName === 'PhonePe') intentUrl = `phonepe://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                    else if (appName === 'Google Pay') intentUrl = `tez://upi/pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                    else if (appName === 'Paytm') intentUrl = `paytmmp://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                    else if (appName === 'BHIM') intentUrl = `bhim://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                    
-                    setUpiPaymentInitiated(true);
-                    window.location.href = intentUrl;
-                    
-                    // Fallback in case intent doesn't work (e.g. desktop)
-                    setTimeout(() => {
-                      if (!document.hidden) {
+            
+            {/* Conditional Content based on Payment Mode */}
+            {formData.paymentMode && (
+              <>
+                {/* UPI Top UI (App selection, QR code) */}
+                {formData.paymentMode === 'UPI' && (
+                  <div className="mt-4 p-5 bg-white border border-orange-200 rounded-xl flex flex-col items-center justify-center text-center">
+                    {upiId ? (() => {
+                      const numAmt = Number(formData.paidAmount) || 0;
+                      const upiUrl = `upi://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt > 0 ? numAmt : ''}&cu=INR&tn=Chanda%20Donation`;
+                      
+                      const handleAppSelect = (appName: string) => {
+                        if (numAmt <= 0) {
+                          alert('Enter a valid Paid Amount greater than 0.');
+                          return;
+                        }
+                        let intentUrl = upiUrl;
+                        if (appName === 'PhonePe') intentUrl = `phonepe://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        else if (appName === 'Google Pay') intentUrl = `tez://upi/pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        else if (appName === 'Paytm') intentUrl = `paytmmp://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        else if (appName === 'BHIM') intentUrl = `bhim://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        
                         setUpiPaymentInitiated(true);
-                      }
-                    }, 2000);
-                  };
+                        window.location.href = intentUrl;
+                        
+                        setTimeout(() => {
+                          if (!document.hidden) {
+                            setUpiPaymentInitiated(true);
+                          }
+                        }, 2000);
+                      };
 
-                  return (
-                    <>
-                       {isPortal && !upiPaymentInitiated ? (
-                         <div className="w-full animate-in fade-in slide-in-from-top-2">
-                           <p className="text-sm font-bold text-gray-700 mb-3">Select Payment App</p>
-                           <div className="grid grid-cols-5 gap-2 mb-4">
-                             {['PhonePe', 'Google Pay', 'Paytm', 'BHIM', 'Other UPI'].map(app => (
-                               <button
-                                 key={app}
-                                 type="button"
-                                 onClick={() => handleAppSelect(app)}
-                                 className="flex flex-col items-center justify-center bg-gray-50 p-2 rounded-xl border border-gray-200 hover:border-orange-400 hover:bg-orange-50 transition-all group"
-                               >
-                                 <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-gray-400 group-hover:text-orange-500 mb-1 shadow-sm">
-                                   <QrCode size={20} />
-                                 </div>
-                                 <span className="text-[10px] font-bold text-gray-600 text-center leading-tight">{app}</span>
-                               </button>
-                             ))}
+                      return (
+                        <>
+                           {isPortal && !upiPaymentInitiated ? (
+                             <div className="w-full animate-in fade-in slide-in-from-top-2">
+                               <p className="text-sm font-bold text-gray-700 mb-3">Select Payment App</p>
+                               <div className="grid grid-cols-4 gap-2 mb-4">
+                                 {[
+                                    { name: 'PhonePe', icon: '/payment/phonepe.svg' },
+                                    { name: 'Google Pay', icon: '/payment/gpay.svg' },
+                                    { name: 'Paytm', icon: '/payment/paytm.svg' },
+                                    { name: 'Other UPI', icon: '/payment/upi.svg' }
+                                 ].map(app => (
+                                   <button
+                                     key={app.name}
+                                     type="button"
+                                     onClick={() => handleAppSelect(app.name)}
+                                     className="flex items-center justify-center bg-white p-3 rounded-xl border border-gray-100 hover:border-orange-400 hover:shadow-md transition-all group aspect-square"
+                                   >
+                                     <div className="w-full h-full flex items-center justify-center transition-transform group-hover:scale-105">
+                                       <img src={app.icon} alt={`${app.name} Logo`} className="w-full h-full object-contain" />
+                                     </div>
+                                   </button>
+                                 ))}
+                               </div>
+                               <div className="relative flex py-2 items-center">
+                                  <div className="flex-grow border-t border-gray-200"></div>
+                                  <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-medium">OR Scan QR Code</span>
+                                  <div className="flex-grow border-t border-gray-200"></div>
+                               </div>
+                             </div>
+                           ) : null}
+                           
+                           <div className="bg-white p-3 rounded-2xl shadow-sm border border-orange-100 mb-4 inline-block mt-2">
+                             <QRCodeSVG value={upiUrl} size={150} level="M" />
                            </div>
-                           <div className="relative flex py-2 items-center">
-                              <div className="flex-grow border-t border-gray-200"></div>
-                              <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-medium">OR Scan QR Code</span>
-                              <div className="flex-grow border-t border-gray-200"></div>
+                           <div className="w-full bg-orange-50 rounded-lg p-3 text-sm text-gray-700 border border-orange-100/50 shadow-sm text-left">
+                             <div className="flex justify-between items-center mb-1">
+                               <span className="text-gray-500 font-medium text-xs">UPI ID</span>
+                               <span className="font-bold">{upiId}</span>
+                             </div>
+                             <div className="flex justify-between items-center">
+                               <span className="text-gray-500 font-medium text-xs">Amount</span>
+                               <span className="font-bold text-red-600">₹{numAmt}</span>
+                             </div>
                            </div>
-                         </div>
-                       ) : null}
-                       
-                       <div className="bg-white p-3 rounded-2xl shadow-sm border border-orange-100 mb-4 inline-block mt-2">
-                         <QRCodeSVG value={upiUrl} size={150} level="M" />
-                       </div>
-                       <div className="w-full bg-orange-50 rounded-lg p-3 text-sm text-gray-700 border border-orange-100/50 shadow-sm text-left">
-                         <div className="flex justify-between items-center mb-1">
-                           <span className="text-gray-500 font-medium text-xs">UPI ID</span>
-                           <span className="font-bold">{upiId}</span>
-                         </div>
-                         <div className="flex justify-between items-center">
-                           <span className="text-gray-500 font-medium text-xs">Amount</span>
-                           <span className="font-bold text-red-600">₹{numAmt}</span>
-                         </div>
-                       </div>
-                    </>
-                  );
-                })() : (
-                  <p className="text-gray-500 text-sm font-medium">UPI ID is not configured in settings. Please contact admin.</p>
+                        </>
+                      );
+                    })() : (
+                      <p className="text-gray-500 text-sm font-medium">UPI ID is not configured in settings. Please contact admin.</p>
+                    )}
+                  </div>
                 )}
-              </div>
+
+                {/* PAID TO SECTION (Shared) */}
+                <div className="mt-4 p-4 bg-white rounded-xl border border-gray-200 relative animate-in fade-in slide-in-from-top-2">
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">Paid To <span className="text-red-500">*</span></label>
+                  {!paidToUserId ? (
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search and select recipient..."
+                        value={paidToSearch}
+                        onChange={(e) => {
+                          setPaidToSearch(e.target.value);
+                          setIsDropdownOpen(true);
+                        }}
+                        onFocus={() => setIsDropdownOpen(true)}
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary transition-all shadow-sm outline-none text-base font-medium"
+                      />
+                      {isDropdownOpen && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                          {usersData?.filter(u => u.name.toLowerCase().includes(paidToSearch.toLowerCase()) || u.phone?.includes(paidToSearch)).length === 0 && (
+                            <div className="p-3 text-sm text-gray-500 text-center">No users found.</div>
+                          )}
+                          {usersData?.filter(u => u.name.toLowerCase().includes(paidToSearch.toLowerCase()) || u.phone?.includes(paidToSearch)).map(u => (
+                            <div
+                              key={u.id}
+                              onClick={() => {
+                                setPaidToUserId(u.id);
+                                setIsDropdownOpen(false);
+                                setPaidToSearch('');
+                              }}
+                              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b last:border-0 border-gray-100 flex justify-between items-center"
+                            >
+                              <span className="font-bold text-gray-800">{u.name}</span>
+                              <span className="text-sm text-gray-500 font-medium">📞 {u.phone || 'N/A'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (() => {
+                    const u = usersData?.find(x => x.id === paidToUserId);
+                    return (
+                      <div className="flex justify-between items-center bg-green-50 p-3 border border-green-200 rounded-xl shadow-sm">
+                        <div>
+                          <div className="font-bold text-green-900">{u?.name}</div>
+                          <div className="text-sm text-green-700 font-medium">📞 {u?.phone || 'N/A'}</div>
+                        </div>
+                        <button type="button" onClick={() => setPaidToUserId('')} className="text-red-500 text-sm font-bold hover:underline px-2 bg-white rounded shadow-sm border border-red-100 py-1">Change</button>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* PAYMENT PROOF SECTION (UPI Only) */}
+                {formData.paymentMode === 'UPI' && (
+                  <div className="w-full mt-4 p-5 bg-white border border-gray-200 rounded-xl flex flex-col text-center animate-in fade-in slide-in-from-top-2">
+                    <label className="block text-sm font-bold text-gray-900 mb-3 tracking-wide">Upload UPI Payment Proof <span className="text-red-500">*</span></label>
+                    {!paymentProofFile && !paymentProofPath ? (
+                      <div className="w-full">
+                        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-orange-300 border-dashed rounded-xl cursor-pointer bg-orange-50 hover:bg-orange-100 transition-colors">
+                          <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                            <UploadCloud className="w-8 h-8 text-orange-500 mb-2" />
+                            <p className="mb-2 text-sm text-gray-700 font-bold">Tap to Upload Screenshot</p>
+                            <p className="text-xs text-gray-500">JPG, PNG, or PDF (Max 10MB)</p>
+                          </div>
+                          <input type="file" className="hidden" accept="image/jpeg,image/png,application/pdf" onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            if (file.size > 10 * 1024 * 1024) {
+                              alert('Payment proof must be within the allowed file size (10MB).');
+                              return;
+                            }
+                            const validTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+                            if (!validTypes.includes(file.type)) {
+                              alert('Please upload a JPG, PNG, or PDF payment proof.');
+                              return;
+                            }
+                            setPaymentProofFile(file);
+                          }} />
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="w-full p-4 border border-green-200 bg-green-50 rounded-xl flex justify-between items-center shadow-sm">
+                        <div className="flex items-center gap-3 overflow-hidden text-left">
+                          <div className="p-2 bg-green-100 rounded-lg shrink-0">
+                            <FileCheck className="text-green-600" size={24} />
+                          </div>
+                          <div className="truncate pr-2">
+                            <p className="text-sm font-bold text-green-800 truncate">{paymentProofFile?.name || 'Uploaded File'}</p>
+                            <p className="text-xs text-green-600 font-medium">Payment proof selected</p>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => {
+                          setPaymentProofFile(null);
+                          setPaymentProofPath('');
+                        }} className="text-red-500 hover:bg-red-50 p-2 rounded-lg shrink-0 transition-colors" title="Remove">
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -530,11 +717,14 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
           {formData.paymentMode === 'UPI' && isPortal && !upiPaymentInitiated ? null : (
             <button
               type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-4 border border-transparent rounded-xl shadow-md text-white font-bold text-lg bg-gradient-to-r from-primary to-orange-500 hover:from-orange-600 hover:to-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+              disabled={loading || isUploadingProof || !formData.paymentMode || !paidToUserId || (formData.paymentMode === 'UPI' && !paymentProofFile && !paymentProofPath)}
+              className="w-full flex items-center justify-center gap-2 py-4 border border-transparent rounded-xl shadow-md text-white font-bold text-lg bg-gradient-to-r from-primary to-orange-500 hover:from-orange-600 hover:to-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? (
-                 <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></span>
+              {loading || isUploadingProof ? (
+                 <div className="flex items-center gap-2">
+                   <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></span>
+                   <span>{isUploadingProof ? 'Uploading Proof...' : 'Saving...'}</span>
+                 </div>
                ) : (
                   <> <Save size={24} /> {formData.paymentMode === 'UPI' && upiPaymentInitiated ? '✅ Save & Register' : (isPortal ? 'Save & Register' : (hasPhone ? 'Save & Share' : 'Save'))} </>
                )}

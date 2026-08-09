@@ -33,6 +33,8 @@ interface ReceiptData {
   gotram?: string;
   familyMembers?: FamilyMembers;
   donationItem?: string;
+  paidToName?: string;
+  paymentProofStatus?: string;
 }
 
 interface ReceiptProps {
@@ -480,13 +482,13 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                 justifyContent: 'space-between',
                 marginTop: 'auto',
               }}>
-                {/* Left: Collected By */}
+                {/* Left: Collected By / Paid To */}
                 <div style={{ flex: 1 }}>
                   <p className="text-[8px] sm:text-[9px]" style={{ fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '6px' }}>
-                    Collected By
+                    Paid To
                   </p>
                   <p className="text-sm sm:text-[17px]" style={{ fontWeight: 900, color: '#450a0a', marginBottom: '2px' }}>
-                    {isBlank ? '________________________' : (data?.volunteerName || defaultCollector)}
+                    {isBlank ? '________________________' : (data?.paidToName || data?.volunteerName || defaultCollector)}
                   </p>
                   <p className="text-[9px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', marginBottom: '16px' }}>
                     {isBlank ? 'Mobile: ____________' : ((data?.volunteerPhone || defaultCollectorPhone) ? `Mobile: ${data?.volunteerPhone || defaultCollectorPhone}` : '')}
@@ -501,6 +503,19 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                     }}>
                       <span className="text-[8px] sm:text-[10px]" style={{ fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         💳 Payment Pending — UPI Available
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Payment Proof Badge for UPI */}
+                  {data?.paymentProofStatus && payMode === 'UPI' && (
+                    <div className="px-2 py-1 sm:px-[12px] sm:py-[6px] mb-3 sm:mb-[14px]" style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      background: '#ecfdf5', border: '1px solid #6ee7b7',
+                      borderRadius: '8px',
+                    }}>
+                      <span className="text-[8px] sm:text-[10px]" style={{ fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        ✓ Payment Proof: Submitted
                       </span>
                     </div>
                   )}
