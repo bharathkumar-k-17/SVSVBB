@@ -1,11 +1,12 @@
-export const normalizePhoneDigits = (value?: string | null, maxLength?: number) => {
+export const normalizePhoneDigits = (value?: string | null, maxLength: number = 10) => {
   const digits = (value || '').replace(/\D/g, '');
   return maxLength ? digits.slice(0, maxLength) : digits;
 };
 
 export const maskPhoneNumber = (value?: string | null) => {
-  const digits = normalizePhoneDigits(value, 15);
-  if (!digits) return '';
+  if (!value) return '';
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 10) return value;
   const visible = digits.slice(-4);
   return `XXXXXX${visible}`;
 };

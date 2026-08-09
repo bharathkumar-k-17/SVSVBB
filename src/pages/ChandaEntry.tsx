@@ -610,7 +610,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                               className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b last:border-0 border-gray-100 flex justify-between items-center"
                             >
                               <span className="font-bold text-gray-800">{u.name}</span>
-                              <span className="text-sm text-gray-500 font-medium">📞 {u.phone || 'N/A'}</span>
+                              <span className="text-sm text-gray-500 font-medium">📞 {maskPhoneNumber(u.phone) || 'N/A'}</span>
                             </div>
                           ))}
                         </div>
@@ -622,7 +622,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                       <div className="flex justify-between items-center bg-green-50 p-3 border border-green-200 rounded-xl shadow-sm">
                         <div>
                           <div className="font-bold text-green-900">{u?.name}</div>
-                          <div className="text-sm text-green-700 font-medium">📞 {u?.phone || 'N/A'}</div>
+                          <div className="text-sm text-green-700 font-medium">📞 {maskPhoneNumber(u?.phone) || 'N/A'}</div>
                         </div>
                         <button type="button" onClick={() => setPaidToUserId('')} className="text-red-500 text-sm font-bold hover:underline px-2 bg-white rounded shadow-sm border border-red-100 py-1">Change</button>
                       </div>

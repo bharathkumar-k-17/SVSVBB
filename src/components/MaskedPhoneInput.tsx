@@ -42,7 +42,9 @@ export function MaskedPhoneInput({
 
     if (/^\d$/.test(key)) {
       event.preventDefault();
-      pushDigits(`${digits}${key}`);
+      if (digits.length < 10) {
+        pushDigits(`${digits}${key}`);
+      }
       return;
     }
 
@@ -62,6 +64,7 @@ export function MaskedPhoneInput({
       required={required}
       disabled={disabled}
       inputMode="numeric"
+      maxLength={10}
       autoComplete="off"
       value={digits}
       onKeyDown={handleKeyDown}
