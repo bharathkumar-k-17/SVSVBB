@@ -47,7 +47,50 @@ export function AppLock({ userId, config, onUnlock }: { userId: string, config: 
     }
   }, [lockoutEndTime]);
 
+  // Handle Keyboard Input
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (lockoutEndTime || isVerifying || unlocking) return;
 
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        return;
+      }
+
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        setPin(pin.slice(0, -1));
+        return;
+      }
+
+      if (/^\d$/.test(e.key)) {
+        e.preventDefault();
+        if (!showPinPad) setShowPinPad(true);
+        handlePinInput(e.key);
+      }
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      if (lockoutEndTime || isVerifying || unlocking) return;
+      const text = e.clipboardData?.getData('text');
+      if (text && /^\d{6}$/.test(text.trim())) {
+        e.preventDefault();
+        if (!showPinPad) setShowPinPad(true);
+        const nextPin = text.trim();
+        setPin(nextPin);
+        setIsVerifying(true);
+        verifyPin(nextPin);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('paste', handlePaste as any);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('paste', handlePaste as any);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin, lockoutEndTime, isVerifying, unlocking, showPinPad]);
 
   const triggerVibrate = () => {
     if (config?.vibrate && navigator.vibrate) {

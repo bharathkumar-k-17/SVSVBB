@@ -1,5 +1,5 @@
 import type { ClipboardEvent, KeyboardEvent } from 'react';
-import { maskPhoneNumber, normalizePhoneDigits } from '../lib/privacy';
+import { normalizePhoneDigits } from '../lib/privacy';
 
 type MaskedPhoneInputProps = {
   value: string;
@@ -63,7 +63,7 @@ export function MaskedPhoneInput({
       disabled={disabled}
       inputMode="numeric"
       autoComplete="off"
-      value={maskPhoneNumber(digits)}
+      value={digits}
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
       onChange={(event) => pushDigits(event.target.value)}

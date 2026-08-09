@@ -16,10 +16,7 @@ export default {
     // We wrap the actual logic in withSupabase to get ctx.supabaseAdmin
     const handler = withSupabase({ auth: ["publishable", "secret"] }, async (req, ctx) => {
       if (req.method !== 'POST') {
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), { 
-          status: 405, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        });
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
       }
 
       try {
@@ -119,6 +116,10 @@ export default {
         const finalStatus = payment_status || (pending === 0 ? 'PAID' : (pAmt > 0 ? 'PARTIAL' : 'UNPAID'));
         const now = Date.now();
 
+        const finalVolunteerId = paid_to_user_id || volunteer_id || 'portal';
+        const finalVolunteerName = paid_to_name || volunteer_name || 'Self (Portal)';
+        const finalVolunteerPhone = paid_to_phone || volunteer_phone || phone || '';
+
         // 4. Insert the devotee into the "devotees" table using ctx.supabaseAdmin
         const devoteeData = {
           name,
@@ -132,19 +133,11 @@ export default {
           gotram: gotram || '',
           family_members: Array.isArray(family_members) ? family_members : [],
           year: year || new Date().getFullYear(),
-          volunteer_id: volunteer_id || 'portal',
-          volunteer_name: volunteer_name || 'Self (Portal)',
-          volunteer_phone: volunteer_phone || (phone || ''),
+          volunteer_id: finalVolunteerId,
+          volunteer_name: finalVolunteerName,
+          volunteer_phone: finalVolunteerPhone,
           created_at: created_at || now,
-          receipt_no: receiptNo,
-          paid_to_user_id,
-          paid_to_name,
-          paid_to_phone,
-          payment_proof_path,
-          payment_proof_name,
-          payment_proof_type,
-          payment_proof_uploaded_at,
-          payment_proof_status
+          receipt_no: receiptNo
         };
 
         const { data: insertedRow, error: insertError } = await ctx.supabaseAdmin
@@ -163,9 +156,10 @@ export default {
             amount: pAmt,
             mode: payment_mode || 'Cash',
             date: now,
-            volunteer_id: volunteer_id || 'portal',
-            volunteer_name: volunteer_name || 'Self (Portal)',
+            volunteer_id: finalVolunteerId,
+            volunteer_name: finalVolunteerName,
             year: year || new Date().getFullYear(),
+            transaction_id: payment_proof_path || null
           });
         }
 

@@ -259,7 +259,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
 
     } catch (error: any) {
       console.error("Error adding devotee: ", error);
-      alert(`Failed to save entry: ${error.message || 'Unknown error'}. Please check your internet connection.`);
+      alert(`Unable to save the Chanda entry. Please try again. (Error: ${error.message || 'Unknown backend error'})`);
     } finally {
       setLoading(false);
     }

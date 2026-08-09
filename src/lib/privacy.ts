@@ -6,9 +6,8 @@ export const normalizePhoneDigits = (value?: string | null, maxLength?: number) 
 export const maskPhoneNumber = (value?: string | null) => {
   const digits = normalizePhoneDigits(value, 15);
   if (!digits) return '';
-  if (digits.length <= 4) return digits;
   const visible = digits.slice(-4);
-  return `${'X'.repeat(Math.max(digits.length - 4, 0))}${visible}`;
+  return `XXXXXX${visible}`;
 };
 
 export const getWhatsAppNumber = (phone?: string | null): string => {
