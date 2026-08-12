@@ -31,7 +31,7 @@ export const usePortalStore = create<PortalState>((set, get) => ({
         .from('qr_portal_settings')
         .select('*')
         .eq('id', 'portal')
-        .single();
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error; // ignore no rows error initially
       

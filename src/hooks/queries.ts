@@ -12,7 +12,7 @@ export const useAppSettings = () => {
         .from('app_settings')
         .select('id, system_access, upi_id, festival_start_date, logo_url, chanda_confirmation_template, chanda_pending_template, pooja_confirmation_template, pooja_reminder_template, festival_greeting_template')
         .eq('id', 'app')
-        .single();
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
@@ -30,7 +30,7 @@ export const useFestivalSettings = (year: number) => {
         .from('festival_settings')
         .select('id, appName, festivalYear, upiId, logoUrl, system_access')
         .eq('festivalYear', year)
-        .single();
+        .maybeSingle();
       // If no row exists, we might need to handle it or return null, but for now just return data
       if (error && error.code !== 'PGRST116') throw error; // ignore no rows error
       return data;
@@ -49,7 +49,7 @@ export const usePortalSettings = () => {
       const { data, error } = await supabase
         .from('qr_portal_settings')
         .select('id, portal_name, committee_name, festival_year, temple_image_url, banner_image_url, welcome_message, footer_quote, address, google_maps_url, phone_number, whatsapp_number, email, facebook_url, instagram_url, youtube_url, website_url, enable_chanda, enable_receipt, enable_pooja, enable_feedback, updated_at')
-        .single();
+        .maybeSingle();
       if (error && error.code !== 'PGRST116') throw error;
       return data;
     },
