@@ -24,6 +24,9 @@ export function DynamicBranding() {
 
     // 2. Generate Dynamic Manifest
     const generateManifest = async () => {
+      const baseUrl = window.location.origin;
+      const absoluteLogoSrc = new URL(logoSrc, baseUrl).href;
+
       const manifest = {
         name: 'SVSVBB Ganesh Festival',
         short_name: 'SVSVBB',
@@ -32,17 +35,17 @@ export function DynamicBranding() {
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
-        scope: '/',
+        start_url: baseUrl + '/',
+        scope: baseUrl + '/',
         icons: [
           {
-            src: logoSrc,
+            src: absoluteLogoSrc,
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable'
           },
           {
-            src: logoSrc,
+            src: absoluteLogoSrc,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
@@ -63,10 +66,10 @@ export function DynamicBranding() {
       manifestLink.setAttribute('href', manifestURL);
       
       // Cache the logo in service worker cache for offline PWA functionality
-      if ('caches' in window) {
+      if ('caches' in window && absoluteLogoSrc.startsWith('http')) {
         try {
           const cache = await caches.open('supabase-data-cache');
-          await cache.add(logoSrc);
+          await cache.add(absoluteLogoSrc);
         } catch (e) {
           console.warn('Failed to cache logo:', e);
         }
