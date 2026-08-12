@@ -31,12 +31,12 @@ export const usePortalStore = create<PortalState>((set, get) => ({
         .from('qr_portal_settings')
         .select('*')
         .eq('id', 'portal')
-        .maybeSingle();
+        .limit(1);
 
-      if (error && error.code !== 'PGRST116') throw error; // ignore no rows error initially
+      if (error) throw error;
       
-      if (data) {
-        set({ settings: data as QRPortalSettings });
+      if (data && data.length > 0) {
+        set({ settings: data[0] as QRPortalSettings });
       }
     } catch (error: any) {
       console.error('Error fetching portal settings:', error.message);

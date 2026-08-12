@@ -12,9 +12,9 @@ export const useAppSettings = () => {
         .from('app_settings')
         .select('id, system_access, upi_id, festival_start_date, logo_url, chanda_confirmation_template, chanda_pending_template, pooja_confirmation_template, pooja_reminder_template, festival_greeting_template')
         .eq('id', 'app')
-        .maybeSingle();
+        .limit(1);
       if (error) throw error;
-      return data;
+      return data?.[0] || null;
     },
     staleTime: 10 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
@@ -30,10 +30,9 @@ export const useFestivalSettings = (year: number) => {
         .from('festival_settings')
         .select('id, appName, festivalYear, upiId, logoUrl, system_access')
         .eq('festivalYear', year)
-        .maybeSingle();
-      // If no row exists, we might need to handle it or return null, but for now just return data
-      if (error && error.code !== 'PGRST116') throw error; // ignore no rows error
-      return data;
+        .limit(1);
+      if (error) throw error;
+      return data?.[0] || null;
     },
     staleTime: 10 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
@@ -49,9 +48,9 @@ export const usePortalSettings = () => {
       const { data, error } = await supabase
         .from('qr_portal_settings')
         .select('id, portal_name, committee_name, festival_year, temple_image_url, banner_image_url, welcome_message, footer_quote, address, google_maps_url, phone_number, whatsapp_number, email, facebook_url, instagram_url, youtube_url, website_url, enable_chanda, enable_receipt, enable_pooja, enable_feedback, updated_at')
-        .maybeSingle();
-      if (error && error.code !== 'PGRST116') throw error;
-      return data;
+        .limit(1);
+      if (error) throw error;
+      return data?.[0] || null;
     },
     staleTime: 10 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
@@ -629,7 +628,7 @@ export const useRecordsData = (year: number) => {
         supabase.from('expenses').select('*').eq('year', year),
         supabase.from('cultural_events').select('*').eq('year', year),
         supabase.from('vip_gotrams').select('*').eq('year', year),
-        supabase.from('app_settings').select('festival_start_date').eq('id', 'app').maybeSingle(),
+        supabase.from('app_settings').select('festival_start_date').eq('id', 'app').limit(1),
         supabase.from('pooja_slots').select('*'),
         supabase.from('pooja_bookings').select('*').eq('year', year)
       ]);
@@ -682,7 +681,7 @@ export const useRecordsData = (year: number) => {
         expenses: mappedExpenses,
         culturalEvents: mappedCultural,
         vipGotrams: mappedVip,
-        festivalStartDate: settings?.festival_start_date || null,
+        festivalStartDate: settings?.[0]?.festival_start_date || null,
         poojaBookings: mappedPooja
       };
     },
