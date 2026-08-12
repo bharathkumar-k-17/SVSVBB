@@ -75,6 +75,7 @@ export function Settings() {
     feedback: false,
     qr_portal_settings: false,
     public_chanda_requests: false,
+    notifications: false,
   });
 
   const isSuperAdmin = appUser?.role === 'superadmin';
@@ -449,6 +450,7 @@ export function Settings() {
         await supabase.from('qr_portal_settings').delete().not('id', 'is', null);
       }
       if (resetOptions.public_chanda_requests) await supabase.from('public_chanda_requests').delete().not('id', 'is', null);
+      if (resetOptions.notifications) await supabase.from('notifications').delete().not('id', 'is', null);
       
       if (resetOptions.pooja_bookings) {
         await supabase.from('pooja_bookings').delete().not('id', 'is', null);
@@ -472,7 +474,7 @@ export function Settings() {
     setResetOptions({
       devotees: checked, expenses: checked, payment_histories: checked, pooja_bookings: checked,
       vip_gotrams: checked, cultural_events: checked, spl_records: checked, feedback: checked,
-      qr_portal_settings: checked, public_chanda_requests: checked,
+      qr_portal_settings: checked, public_chanda_requests: checked, notifications: checked,
     });
   };
 

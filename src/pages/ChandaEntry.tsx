@@ -46,20 +46,37 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
   const [paymentProofPath, setPaymentProofPath] = useState('');
 
   const generatePDF = async (receiptNo: string) => {
-    const element = document.getElementById('receipt-container');
+    const element = document.getElementById('receipt-export-container');
     if (!element) return;
     try {
       await new Promise(r => setTimeout(r, 300));
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      const canvas = await html2canvas(element, { 
+        scale: 3, 
+        useCORS: true,
+        windowWidth: 1024,
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById('receipt-export-container');
+          if (el) {
+            el.style.width = '794px';
+            el.style.maxWidth = 'none';
+            el.style.minHeight = '1123px';
+          }
+        }
+      });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4'
       });
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 12;
+      const imgW = pageW - margin * 2;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
+      
+      pdf.addImage(imgData, 'PNG', margin, yOffset, imgW, imgH, '', 'FAST');
       pdf.save(`Receipt_${receiptNo}.pdf`);
     } catch (err) {
       console.error('PDF generation failed', err);

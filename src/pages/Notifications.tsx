@@ -198,10 +198,12 @@ export function Notifications() {
                     }`}>
                       {notification.type}
                     </p>
-                    <p className={`text-sm sm:text-base truncate flex-1 ${
+                    <p className={`text-sm sm:text-base flex-1 overflow-wrap-anywhere break-words whitespace-pre-wrap ${
                       isUnread ? 'font-bold text-gray-900' : 'font-medium text-gray-700'
                     }`}>
-                      {notification.message}
+                      {notification.message.startsWith('Volunteer ') && notification.created_by_name && notification.created_by_name !== 'System'
+                        ? notification.message.replace(/^Volunteer /, notification.created_by_name + ' ')
+                        : notification.message}
                     </p>
                   </div>
 

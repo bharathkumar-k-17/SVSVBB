@@ -89,20 +89,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
       fetchSettings();
     }, []);
 
-    /* ─ Resize Observer for Mobile Scaling ─ */
-    useEffect(() => {
-      if (!containerRef.current) return;
-      const observer = new ResizeObserver((entries) => {
-        const { width } = entries[0].contentRect;
-        if (width < 794) {
-          setScale(width / 794);
-        } else {
-          setScale(1);
-        }
-      });
-      observer.observe(containerRef.current);
-      return () => observer.disconnect();
-    }, []);
+    /* ─ Resize Observer removed for native responsive layout ─ */
 
     /* ─ Derived values ─ */
     const createdAt   = !isBlank && data?.createdAt ? new Date(data.createdAt) : new Date();
@@ -158,7 +145,9 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
           const el = clonedDoc.getElementById('receipt-export-container');
           if (el) {
             el.style.width = '794px';
+            el.style.maxWidth = 'none';
             el.style.minHeight = '1123px';
+            // Force desktop layout classes (sm:) on clone since windowWidth handles media queries
           }
         }
       });
@@ -264,28 +253,18 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         )}
 
         {/* ── A4 Receipt Card ──
-            794px ≈ A4 width at 96dpi.
-            We use a fixed width so the layout is always consistent for PDF/print.
+            Using max-w-[794px] for responsive web, but PDF generation forces 794px
         ── */}
         <div 
-          className="mx-auto flex justify-center"
-          style={{
-            width: scale < 1 ? `${794 * scale}px` : '794px',
-            height: scale < 1 ? `${1123 * scale}px` : 'auto',
-          }}
+          className="mx-auto flex justify-center w-full max-w-[794px] box-border"
         >
           <div
-            style={{
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
-              width: '794px',
-            }}
-            className="print:transform-none print:w-[794px]"
+            className="w-full"
           >
             <div
               ref={exportRef}
               id="receipt-export-container"
-              className="relative bg-white border-2 border-amber-400 shadow-2xl w-[794px] min-h-[1123px]"
+              className="relative bg-white border-2 border-amber-400 shadow-xl w-full mx-auto"
               style={{
                 fontFamily: "'Segoe UI', 'Noto Sans Telugu', sans-serif",
                 breakInside: 'avoid',
@@ -293,12 +272,13 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
             >
           {/* ── FULL-PAGE WATERMARK ── */}
           <div
-            className="pointer-events-none select-none absolute inset-0 flex items-center justify-center z-0"
+            className="pointer-events-none select-none absolute inset-0 flex items-center justify-center z-0 overflow-hidden"
           >
             <img
               src={logoSrc}
               alt=""
-              style={{ width: '480px', height: '480px', objectFit: 'cover', borderRadius: '50%', opacity: 0.35 }}
+              className="w-1/2 sm:w-[480px] object-cover opacity-[0.35]"
+              style={{ aspectRatio: '1/1', borderRadius: '50%' }}
             />
           </div>
 
@@ -313,7 +293,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
               {/* Left Logo */}
               <img
                 src={logoSrc} alt="Logo"
-                className="w-12 h-12 sm:w-[90px] sm:h-[90px]"
+                className="w-10 h-10 sm:w-[90px] sm:h-[90px]"
                 style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
               />
 
@@ -333,7 +313,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
               {/* Right Logo */}
               <img
                 src={logoSrc} alt="Vinayaka"
-                className="w-12 h-12 sm:w-[90px] sm:h-[90px]"
+                className="w-10 h-10 sm:w-[90px] sm:h-[90px]"
                 style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
               />
             </div>
@@ -346,7 +326,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
               padding: '12px 40px',
               textAlign: 'center',
             }}>
-              <p style={{ color: '#fff', fontWeight: 900, fontSize: '15px', letterSpacing: '0.25em', textTransform: 'uppercase' }}>
+              <p className="text-[12px] sm:text-[15px]" style={{ color: '#fff', fontWeight: 900, letterSpacing: '0.25em', textTransform: 'uppercase' }}>
                 {isAck ? '⚠  Acknowledgement Receipt  ⚠' : '✅  Payment Receipt'}
               </p>
               {isAck && (
@@ -381,7 +361,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                     <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       {item.label}
                     </p>
-                    <p className="text-[12px] sm:text-[14px] break-all" style={{ fontWeight: 900, color: '#7c2d12', marginTop: '4px' }}>
+                    <p className="text-[11px] sm:text-[14px] break-words overflow-wrap-anywhere" style={{ fontWeight: 900, color: '#7c2d12', marginTop: '4px' }}>
                       {item.value}
                     </p>
                   </div>
@@ -398,7 +378,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                 <p style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '8px' }}>
                   Devotee Name
                 </p>
-                <p style={{ fontSize: '26px', fontWeight: 900, color: '#7c2d12', lineHeight: 1.2 }}>
+                <p className="text-[18px] sm:text-[26px]" style={{ fontWeight: 900, color: '#7c2d12', lineHeight: 1.2, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                   {isBlank ? '________________________________' : (data?.name || '—')}
                 </p>
               </div>
@@ -422,10 +402,10 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                       { label: 'Payment Mode',  value: data?.paymentMode || (isBlank ? '________' : 'Cash'), color: '#450a0a' },
                     ].map((row, i, arr) => (
                       <tr key={row.label} style={{ borderBottom: i < arr.length - 1 ? '1px solid #fde68a' : 'none' }}>
-                        <td className="py-[6px] sm:py-[11px] text-[10px] sm:text-[13px]" style={{ fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <td className="py-[6px] sm:py-[11px] text-[10px] sm:text-[13px] break-words pr-2" style={{ fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           {row.label}
                         </td>
-                        <td className="py-[6px] sm:py-[11px] text-[12px] sm:text-[16px]" style={{ fontWeight: 900, color: row.color, textAlign: 'right' }}>
+                        <td className="py-[6px] sm:py-[11px] text-[12px] sm:text-[16px] break-words" style={{ fontWeight: 900, color: row.color, textAlign: 'right' }}>
                           {row.value}
                         </td>
                       </tr>
@@ -445,7 +425,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                   <p style={{ fontSize: '9px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '5px' }}>
                     Offering / Donation Item
                   </p>
-                  <p style={{ fontSize: '15px', fontWeight: 800, color: '#450a0a' }}>{data.donationItem}</p>
+                  <p className="text-[13px] sm:text-[15px] break-words" style={{ fontWeight: 800, color: '#450a0a' }}>{data.donationItem}</p>
                 </div>
               )}
 
@@ -461,11 +441,11 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                   <p style={{ fontSize: '10px', fontWeight: 900, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.35em', marginBottom: '8px' }}>
                     ⭐  VIP Gotram Entry  ⭐
                   </p>
-                  <p style={{ fontSize: '22px', fontWeight: 900, color: '#7c2d12' }}>
+                  <p className="text-[18px] sm:text-[22px] break-words" style={{ fontWeight: 900, color: '#7c2d12' }}>
                     {data?.gotram || 'Special Entry'}
                   </p>
                   {members.length > 0 && (
-                    <p style={{ fontSize: '13px', fontWeight: 600, color: '#57534e', marginTop: '8px', lineHeight: 1.8 }}>
+                    <p className="text-[11px] sm:text-[13px] break-words" style={{ fontWeight: 600, color: '#57534e', marginTop: '8px', lineHeight: 1.8 }}>
                       {members.join('  •  ')}
                     </p>
                   )}
@@ -487,7 +467,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                   <p className="text-[8px] sm:text-[9px]" style={{ fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '6px' }}>
                     Paid To
                   </p>
-                  <p className="text-sm sm:text-[17px]" style={{ fontWeight: 900, color: '#450a0a', marginBottom: '2px' }}>
+                  <p className="text-sm sm:text-[17px] break-words" style={{ fontWeight: 900, color: '#450a0a', marginBottom: '2px' }}>
                     {isBlank ? '________________________' : (data?.paidToName || data?.volunteerName || defaultCollector)}
                   </p>
                   <p className="text-[9px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', marginBottom: '16px' }}>
@@ -522,7 +502,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
 
                   {/* Signature */}
                   <div>
-                    <div style={{ width: '120px', height: '1px', background: '#f59e0b', marginTop: '32px' }} />
+                    <div className="w-[80px] sm:w-[120px]" style={{ height: '1px', background: '#f59e0b', marginTop: '32px' }} />
                     <p className="text-[7px] sm:text-[9px]" style={{ color: '#b45309', fontWeight: 700, marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                       Authorised Signature
                     </p>
@@ -540,7 +520,8 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
                     }}>
                       <QRCodeSVG
                         value={showPaymentQR ? upiQrValue : verifyQrValue}
-                        size={120} // Size 120px–140px as requested
+                        size={100} // using responsive size handled by wrapper css if needed, but 100px is safe for mobile
+                        className="w-[80px] h-[80px] sm:w-[120px] sm:h-[120px]"
                         marginSize={2}
                         bgColor="#ffffff"
                         fgColor={showPaymentQR ? '#000000' : '#450a0a'}

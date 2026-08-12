@@ -8,7 +8,7 @@ export function ReceiptModal({ devotee, currentYear, onClose }: { devotee: any; 
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* Sheet on mobile, modal on desktop */}
-      <div className="relative w-full sm:max-w-[460px] bg-transparent max-h-[96vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl">
+      <div className="relative w-full max-w-[850px] bg-transparent max-h-[96vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl">
         {/* Close button */}
         <button
           onClick={onClose}
