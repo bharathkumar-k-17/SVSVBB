@@ -530,9 +530,27 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                           alert('Enter a valid Paid Amount greater than 0.');
                           return;
                         }
-                        const intentPayee = upiId;
+                        
+                        let intentPayee = upiId;
+                        
+                        if (upiMobile) {
+                          if (appName === 'PhonePe') {
+                            intentPayee = `${upiMobile}@ybl`;
+                          } else if (appName === 'Paytm') {
+                            intentPayee = `${upiMobile}@paytm`;
+                          } else if (appName === 'BHIM') {
+                            intentPayee = `${upiMobile}@upi`;
+                          }
+                          // Google Pay and Other UPI fallback to upiId 
+                          // as they lack a reliable universal mobile VPA format.
+                        }
+                        
                         const baseParams = `pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
                         let intentUrl = `upi://pay?${baseParams}`;
+                        
+                        console.log('Configured UPI ID:', upiId);
+                        console.log('Configured UPI Mobile:', upiMobile);
+                        console.log('UPI APP PAYMENT INTENT:', intentUrl);
                         
                         const isAndroid = /Android/i.test(navigator.userAgent);
                         
