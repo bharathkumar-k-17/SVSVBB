@@ -530,7 +530,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                           alert('Enter a valid Paid Amount greater than 0.');
                           return;
                         }
-                        const intentPayee = upiMobile || upiId;
+                        const intentPayee = upiId;
                         let intentUrl = upiUrl;
                         if (appName === 'PhonePe') intentUrl = `phonepe://pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
                         else if (appName === 'Google Pay') intentUrl = `tez://upi/pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
