@@ -16,6 +16,11 @@ const queryClient = new QueryClient({
   },
 })
 
+// Global handler for dynamically imported chunk errors (stale cache after new deployment)
+window.addEventListener('vite:preloadError', () => {
+  window.location.reload();
+});
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
         <QueryClientProvider client={queryClient}>
