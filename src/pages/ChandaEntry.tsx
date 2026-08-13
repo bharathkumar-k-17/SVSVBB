@@ -531,26 +531,9 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                           return;
                         }
                         
-                        let intentPayee = upiId;
-                        
-                        if (upiMobile) {
-                          if (appName === 'PhonePe') {
-                            intentPayee = `${upiMobile}@ybl`;
-                          } else if (appName === 'Paytm') {
-                            intentPayee = `${upiMobile}@paytm`;
-                          } else if (appName === 'BHIM') {
-                            intentPayee = `${upiMobile}@upi`;
-                          }
-                          // Google Pay and Other UPI fallback to upiId 
-                          // as they lack a reliable universal mobile VPA format.
-                        }
-                        
+                        const intentPayee = upiId;
                         const baseParams = `pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
                         let intentUrl = `upi://pay?${baseParams}`;
-                        
-                        console.log('Configured UPI ID:', upiId);
-                        console.log('Configured UPI Mobile:', upiMobile);
-                        console.log('UPI APP PAYMENT INTENT:', intentUrl);
                         
                         const isAndroid = /Android/i.test(navigator.userAgent);
                         
@@ -566,6 +549,10 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                           else if (appName === 'Paytm') intentUrl = `paytmmp://pay?${baseParams}`;
                           else if (appName === 'BHIM') intentUrl = `bhim://pay?${baseParams}`;
                         }
+                        
+                        console.log('[UPI] Payee:', intentPayee);
+                        console.log('[UPI] Amount:', numAmt);
+                        console.log('[UPI] Final payment intent:', intentUrl);
                         
                         setUpiPaymentInitiated(true);
                         window.location.href = intentUrl;
