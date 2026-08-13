@@ -531,11 +531,23 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                           return;
                         }
                         const intentPayee = upiId;
-                        let intentUrl = upiUrl;
-                        if (appName === 'PhonePe') intentUrl = `phonepe://pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                        else if (appName === 'Google Pay') intentUrl = `tez://upi/pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                        else if (appName === 'Paytm') intentUrl = `paytmmp://pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                        else if (appName === 'BHIM') intentUrl = `bhim://pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        const baseParams = `pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        let intentUrl = `upi://pay?${baseParams}`;
+                        
+                        const isAndroid = /Android/i.test(navigator.userAgent);
+                        
+                        if (isAndroid) {
+                          if (appName === 'PhonePe') intentUrl = `intent://pay?${baseParams}#Intent;scheme=upi;package=com.phonepe.app;end;`;
+                          else if (appName === 'Google Pay') intentUrl = `intent://pay?${baseParams}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end;`;
+                          else if (appName === 'Paytm') intentUrl = `intent://pay?${baseParams}#Intent;scheme=upi;package=net.one97.paytm;end;`;
+                          else if (appName === 'BHIM') intentUrl = `intent://pay?${baseParams}#Intent;scheme=upi;package=in.org.npci.upiapp;end;`;
+                        } else {
+                          // iOS / Generic fallback
+                          if (appName === 'PhonePe') intentUrl = `phonepe://pay?${baseParams}`;
+                          else if (appName === 'Google Pay') intentUrl = `tez://upi/pay?${baseParams}`;
+                          else if (appName === 'Paytm') intentUrl = `paytmmp://pay?${baseParams}`;
+                          else if (appName === 'BHIM') intentUrl = `bhim://pay?${baseParams}`;
+                        }
                         
                         setUpiPaymentInitiated(true);
                         window.location.href = intentUrl;
