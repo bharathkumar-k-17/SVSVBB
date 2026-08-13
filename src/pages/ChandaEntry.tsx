@@ -33,6 +33,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
   const [success, setSuccess] = useState(false);
   const [lastSavedDevotee, setLastSavedDevotee] = useState<any>(null);
   const [upiId, setUpiId] = useState('');
+  const [upiMobile, setUpiMobile] = useState('');
   const [upiPaymentInitiated, setUpiPaymentInitiated] = useState(false);
 
   // New States for Enterprise Flow
@@ -88,6 +89,9 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
   useEffect(() => {
     if (appSettings?.upi_id) {
       setUpiId(appSettings.upi_id);
+    }
+    if (appSettings?.upi_mobile) {
+      setUpiMobile(appSettings.upi_mobile);
     }
   }, [appSettings]);
 
@@ -526,11 +530,12 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                           alert('Enter a valid Paid Amount greater than 0.');
                           return;
                         }
+                        const intentPayee = upiMobile || upiId;
                         let intentUrl = upiUrl;
-                        if (appName === 'PhonePe') intentUrl = `phonepe://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                        else if (appName === 'Google Pay') intentUrl = `tez://upi/pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                        else if (appName === 'Paytm') intentUrl = `paytmmp://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
-                        else if (appName === 'BHIM') intentUrl = `bhim://pay?pa=${upiId}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        if (appName === 'PhonePe') intentUrl = `phonepe://pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        else if (appName === 'Google Pay') intentUrl = `tez://upi/pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        else if (appName === 'Paytm') intentUrl = `paytmmp://pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
+                        else if (appName === 'BHIM') intentUrl = `bhim://pay?pa=${intentPayee}&pn=SVSVBB&am=${numAmt}&cu=INR&tn=Chanda%20Donation`;
                         
                         setUpiPaymentInitiated(true);
                         window.location.href = intentUrl;

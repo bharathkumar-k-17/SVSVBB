@@ -10,7 +10,7 @@ export const useAppSettings = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('app_settings')
-        .select('id, system_access, upi_id, festival_start_date, logo_url, chanda_confirmation_template, chanda_pending_template, pooja_confirmation_template, pooja_reminder_template, festival_greeting_template')
+        .select('id, system_access, upi_id, upi_mobile, festival_start_date, logo_url, chanda_confirmation_template, chanda_pending_template, pooja_confirmation_template, pooja_reminder_template, festival_greeting_template')
         .eq('id', 'app')
         .limit(1);
       if (error) throw error;

@@ -242,6 +242,7 @@ export interface AppSettings {
   id: string;
   system_access: boolean;
   upi_id?: string;
+  upi_mobile?: string;
   festival_start_date?: string;
   logo_url?: string;
   chanda_confirmation_template?: string;

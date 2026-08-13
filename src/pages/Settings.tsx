@@ -46,6 +46,7 @@ export function Settings() {
   
   // Asset State
   const [upiId, setUpiId] = useState('');
+  const [upiMobile, setUpiMobile] = useState('');
   const [festivalStartDate, setFestivalStartDate] = useState('');
   
   // Branding State
@@ -87,6 +88,7 @@ export function Settings() {
   useEffect(() => {
     if (isSuperAdmin && appSettings) {
       if (appSettings.upi_id) setUpiId(appSettings.upi_id);
+      if (appSettings.upi_mobile) setUpiMobile(appSettings.upi_mobile);
       if (appSettings.festival_start_date) setFestivalStartDate(appSettings.festival_start_date);
       setTemplates({
         chandaConfirmation: appSettings.chanda_confirmation_template || '',
@@ -214,6 +216,24 @@ export function Settings() {
       toast.success('UPI ID saved successfully!');
     } catch (err) {
       toast.error('Failed to save UPI ID');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveUpiMobile = async () => {
+    if (!upiMobile.trim()) return;
+    if (upiMobile.trim().length !== 10) {
+      toast.error('Mobile number must be exactly 10 digits.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await supabase.from('app_settings').upsert({ id: 'app', upi_mobile: upiMobile.trim() });
+      queryClient.invalidateQueries({ queryKey: ['appSettings'] });
+      toast.success('UPI Mobile Number saved successfully!');
+    } catch (err) {
+      toast.error('Failed to save UPI Mobile Number');
     } finally {
       setLoading(false);
     }
@@ -653,9 +673,27 @@ export function Settings() {
               <h2 className="text-xl font-bold text-gray-900 mb-6 border-b pb-2">Festival Settings</h2>
               <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
                 <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2"><QrCode size={18} /> Dynamic UPI Configuration</h3>
+                <div className="flex items-center gap-4 max-w-md mb-4">
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Committee UPI ID (QR Code)</label>
+                    <input placeholder="UPI ID" value={upiId} onChange={(e) => setUpiId(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
+                  </div>
+                  <button onClick={handleSaveUpiId} disabled={loading || !upiId.trim()} className="mt-5 px-6 py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-sm disabled:opacity-50">Save UPI</button>
+                </div>
+                
                 <div className="flex items-center gap-4 max-w-md">
-                  <input placeholder="UPI ID" value={upiId} onChange={(e) => setUpiId(e.target.value)} className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" />
-                  <button onClick={handleSaveUpiId} disabled={loading || !upiId.trim()} className="px-6 py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-sm disabled:opacity-50">Save UPI</button>
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Committee UPI-linked Mobile Number (Payment Apps)</label>
+                    <input 
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="10-digit mobile number" 
+                      value={upiMobile} 
+                      onChange={(e) => setUpiMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} 
+                      className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" 
+                    />
+                  </div>
+                  <button onClick={handleSaveUpiMobile} disabled={loading || !upiMobile.trim() || upiMobile.trim().length !== 10} className="mt-5 px-6 py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-sm disabled:opacity-50">Save Mobile</button>
                 </div>
               </div>
               <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
