@@ -21,4 +21,5 @@ export interface PoojaSlot {
 export interface PoojaBookingData {
   name: string;
   phone: string;
+  receipt_no?: string;
 }

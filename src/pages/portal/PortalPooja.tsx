@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Search } from 'lucide-react';
 import { usePortalStore } from '../../store/portalStore';
 import { useAppStore } from '../../store/appStore';
 import { subscribeToSlots, bookPoojaSlot, getFestivalStartDate } from '../../lib/pooja-service';
@@ -9,6 +9,7 @@ import SlotCard from '../../components/pooja/SlotCard';
 import BookingModal from '../../components/pooja/BookingModal';
 import { toast } from 'react-hot-toast';
 import { createAdminNotification } from '../../lib/notifications';
+import { supabase } from '../../lib/supabase';
 
 export function PortalPooja() {
   const { settings } = usePortalStore();
@@ -18,6 +19,15 @@ export function PortalPooja() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [festivalStartDate, setFestivalStartDate] = useState<string | null>(null);
+
+  // Receipt Verification State
+  const [verifiedReceipt, setVerifiedReceipt] = useState<string | null>(null);
+  const [verifiedName, setVerifiedName] = useState<string | null>(null);
+  const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
+  const [receiptInput, setReceiptInput] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [receiptError, setReceiptError] = useState("");
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -33,9 +43,52 @@ export function PortalPooja() {
     return () => unsubscribe();
   }, [currentYear]);
 
+  const handleVerifyReceipt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedReceipt = receiptInput.trim().toUpperCase();
+    const normalizedInputName = nameInput.trim().replace(/\s+/g, ' ').toLowerCase();
+
+    if (!trimmedReceipt || !normalizedInputName) {
+      setReceiptError("Please enter both receipt number and name.");
+      return;
+    }
+    setVerifying(true);
+    setReceiptError("");
+    
+    try {
+      const { data, error } = await supabase
+        .from('devotees')
+        .select('receipt_no, name, phone')
+        .eq('receipt_no', trimmedReceipt)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data && data.receipt_no && data.name) {
+        const dbNameNormalized = data.name.trim().replace(/\s+/g, ' ').toLowerCase();
+        if (dbNameNormalized === normalizedInputName) {
+            setVerifiedReceipt(data.receipt_no);
+            setVerifiedName(data.name);
+            if (data.phone) {
+               setVerifiedPhone(data.phone);
+            }
+        } else {
+            setReceiptError("Receipt holder name does not match this receipt.");
+        }
+      } else {
+        setReceiptError("Receipt number not found. Please check your receipt number.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setReceiptError("Error verifying receipt. Please try again.");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const handleBook = async (slotId: string, data: PoojaBookingData) => {
     setIsSubmitting(true);
-    const result = await bookPoojaSlot(slotId, data, currentYear);
+    const bookingDataWithReceipt = { ...data, receipt_no: verifiedReceipt || undefined };
+    const result = await bookPoojaSlot(slotId, bookingDataWithReceipt, currentYear);
     setIsSubmitting(false);
     
     if (result.success) {
@@ -44,7 +97,7 @@ export function PortalPooja() {
       await createAdminNotification({
         actorName: data.name || 'Unknown',
         type: 'QR PORTAL · POOJA BOOKING',
-        message: `${data.name || 'Unknown'} booked Pooja.`
+        message: `${data.name || 'Unknown'} (Receipt: ${verifiedReceipt}) booked Pooja.`
       });
 
       setSelectedSlot(null);
@@ -77,13 +130,87 @@ export function PortalPooja() {
 
   if (!settings?.enable_pooja) return null;
 
+  if (!verifiedReceipt) {
+    return (
+      <div className="bg-white/80 backdrop-blur-md rounded-3xl p-4 sm:p-6 shadow-xl border border-white">
+        <div className="flex items-center gap-3 mb-6">
+          <Link to="/portal" className="p-2 rounded-full hover:bg-purple-50 text-gray-500 hover:text-purple-600 transition-colors">
+            <ArrowLeft size={20} />
+          </Link>
+          <h2 className="text-xl font-bold text-gray-800">Book Pooja</h2>
+        </div>
+
+        <form onSubmit={handleVerifyReceipt} className="space-y-6 max-w-md mx-auto py-8">
+            <p className="text-sm text-gray-600 font-medium text-center">
+              Enter your Chanda receipt details to continue.
+            </p>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Receipt Number</label>
+              <input
+                type="text"
+                required
+                value={receiptInput}
+                onChange={(e) => setReceiptInput(e.target.value)}
+                placeholder="G26-001"
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all shadow-sm font-mono tracking-wider"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Receipt Holder Name</label>
+              <input
+                type="text"
+                required
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="Enter name"
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all shadow-sm font-medium"
+              />
+            </div>
+
+            {receiptError && (
+              <div className="p-4 bg-red-50 text-red-600 text-sm font-bold rounded-xl border border-red-100 text-center animate-in fade-in zoom-in-95">
+                {receiptError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={verifying}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl shadow-lg text-white font-bold text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-70"
+            >
+              {verifying ? <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-white" /> : "Continue"}
+            </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white/80 backdrop-blur-md rounded-3xl p-4 sm:p-6 shadow-xl border border-white">
       <div className="flex items-center gap-3 mb-6">
-        <Link to="/portal" className="p-2 rounded-full hover:bg-purple-50 text-gray-500 hover:text-purple-600 transition-colors">
+        <button 
+          onClick={() => {
+            setVerifiedReceipt(null);
+            setVerifiedName(null);
+            setVerifiedPhone(null);
+          }} 
+          className="p-2 rounded-full hover:bg-purple-50 text-gray-500 hover:text-purple-600 transition-colors"
+        >
           <ArrowLeft size={20} />
-        </Link>
+        </button>
         <h2 className="text-xl font-bold text-gray-800">Book Pooja</h2>
+      </div>
+      
+      <div className="mb-6 bg-purple-50 p-4 rounded-xl border border-purple-100 flex justify-between items-center">
+         <div>
+            <p className="text-xs font-bold text-purple-600 uppercase tracking-widest">Verified Receipt</p>
+            <p className="text-lg font-black text-gray-800 font-mono">{verifiedReceipt}</p>
+         </div>
+         <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm">
+             <span className="text-green-500 font-bold">✓</span>
+         </div>
       </div>
 
       <div className="space-y-6">
@@ -134,6 +261,8 @@ export function PortalPooja() {
         onClose={() => setSelectedSlot(null)}
         onBook={handleBook}
         isSubmitting={isSubmitting}
+        verifiedName={verifiedName}
+        verifiedPhone={verifiedPhone}
       />
     </div>
   );

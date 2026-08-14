@@ -228,12 +228,23 @@ export interface PublicChandaRequest {
   name: string;
   phone: string;
   total_amount: number;
+  paid_amount: number;
+  pending_amount: number;
   donation_item?: string;
   payment_mode?: PaymentMode;
   transaction_id?: string;
   reference_number?: string;
+  payment_proof_path?: string;
+  payment_proof_name?: string;
+  payment_proof_type?: string;
   gotram?: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  family_members?: string[];
+  status: 'PENDING_REVIEW' | 'ACCEPTED' | 'REJECTED' | 'PENDING' | 'APPROVED';
+  reviewed_by?: string;
+  reviewed_by_name?: string;
+  reviewed_by_phone?: string;
+  reviewed_at?: string;
+  rejection_reason?: string;
   created_at: number;
   updated_at: string;
 }

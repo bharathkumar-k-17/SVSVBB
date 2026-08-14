@@ -14,6 +14,7 @@ import { AppLockSetupPopup } from './AppLockSetupPopup';
 import { subscribeToUnreadCount } from '../lib/notifications';
 import { useGlobalLogo } from '../hooks/useGlobalLogo';
 import { useAppLockStore } from '../store/appLockStore';
+import { usePendingQRChandaRequests } from '../hooks/queries';
 
 const BASE_NAV_ITEMS = [
   { path: '/dashboard',  label: 'Dashboard',          icon: LayoutDashboard },
@@ -36,6 +37,9 @@ export function Layout() {
   const profileRef = useRef<HTMLDivElement>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const { checkSetupStatus } = useAppLockStore();
+  
+  const { data: pendingReviews } = usePendingQRChandaRequests();
+  const pendingReviewsCount = pendingReviews?.length || 0;
 
   useEffect(() => {
     if (appUser?.id) {
@@ -221,6 +225,25 @@ export function Layout() {
                 >
                   <MessageSquareHeart size={20} />
                 </button>
+              )}
+
+              {isAdmin && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/qr-chanda-reviews')}
+                    className="relative rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-orange-50 hover:text-orange-600"
+                    aria-label="QR Chanda Reviews"
+                    title="QR Chanda Reviews"
+                  >
+                    <CheckCheck size={20} />
+                    {pendingReviewsCount > 0 && (
+                      <span className="absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-blue-500 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white shadow-sm">
+                        {pendingReviewsCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
               )}
 
               {isAdmin && (

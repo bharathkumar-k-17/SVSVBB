@@ -131,7 +131,10 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
       rawPhone = rawPhone.slice(2);
     }
     
-    if (rawPhone && rawPhone.length !== 10) {
+    if (isPortal && (!rawPhone || rawPhone.length !== 10)) {
+      alert('A valid 10-digit Mobile Number is required.');
+      return;
+    } else if (!isPortal && rawPhone && rawPhone.length !== 10) {
       alert('Enter a valid 10-digit phone number or leave it blank.');
       return;
     }
@@ -257,8 +260,8 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
       setSuccess(true);
       refetchDevotees();
       
-      // Auto-generate and download PDF only in portal mode
-      if (isPortal) {
+      // Auto-generate and download PDF only in portal mode and if receipt exists
+      if (isPortal && receiptNo) {
         setTimeout(() => generatePDF(receiptNo), 500);
       }
 
@@ -342,19 +345,32 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
 
         {success && lastSavedDevotee && (
           <div className="mb-6 animate-in fade-in slide-in-from-top-2">
-            <div className="p-4 bg-green-50 text-green-800 rounded-lg flex flex-col gap-3 items-center border border-green-200 shadow-sm mb-6">
-              <span className="font-bold flex items-center gap-2 text-lg">✅ Chanda Entry Saved Successfully!</span>
-              <p className="text-sm">Please see the generated receipt below. You can print or share it using the buttons provided.</p>
-            </div>
-            
-            <div className="w-full" id="receipt-container">
-              <Receipt 
-                data={lastSavedDevotee} 
-                isBlank={false}
-                hideActions={!isPortal}
-                isPortal={isPortal}
-              />
-            </div>
+            {isPortal ? (
+              <div className="p-8 bg-blue-50 text-blue-900 rounded-3xl flex flex-col gap-4 items-center border border-blue-200 shadow-md text-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-2">
+                  <span className="text-3xl">⏳</span>
+                </div>
+                <h3 className="font-black text-2xl tracking-tight">Pending Review</h3>
+                <p className="text-blue-800 font-medium">Your Chanda registration has been submitted successfully and is pending review by the committee.</p>
+                <p className="text-sm text-blue-600/80 mt-2">You will be notified once your payment is verified and your official receipt is generated.</p>
+              </div>
+            ) : (
+              <>
+                <div className="p-4 bg-green-50 text-green-800 rounded-lg flex flex-col gap-3 items-center border border-green-200 shadow-sm mb-6">
+                  <span className="font-bold flex items-center gap-2 text-lg">✅ Chanda Entry Saved Successfully!</span>
+                  <p className="text-sm">Please see the generated receipt below. You can print or share it using the buttons provided.</p>
+                </div>
+                
+                <div className="w-full" id="receipt-container">
+                  <Receipt 
+                    data={lastSavedDevotee} 
+                    isBlank={false}
+                    hideActions={!isPortal}
+                    isPortal={isPortal}
+                  />
+                </div>
+              </>
+            )}
             
             {/* Custom Sharing Buttons for Private UI */}
             {!isPortal && lastSavedDevotee.phone && (
@@ -756,7 +772,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
           {formData.paymentMode === 'UPI' && isPortal && !upiPaymentInitiated ? null : (
             <button
               type="submit"
-              disabled={loading || isUploadingProof || !formData.paymentMode || !paidToUserId || (formData.paymentMode === 'UPI' && !paymentProofFile && !paymentProofPath)}
+              disabled={loading || isUploadingProof || !formData.paymentMode || !paidToUserId || (formData.paymentMode === 'UPI' && !paymentProofFile && !paymentProofPath) || (isPortal && !hasPhone)}
               className="w-full flex items-center justify-center gap-2 py-4 border border-transparent rounded-xl shadow-md text-white font-bold text-lg bg-gradient-to-r from-primary to-orange-500 hover:from-orange-600 hover:to-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading || isUploadingProof ? (

@@ -86,6 +86,25 @@ export const bookPoojaSlot = async (
   year: number
 ) => {
   try {
+    if (bookingData.receipt_no) {
+      // Prevent duplicate bookings by checking if the receipt number is already inside the name of an active booking
+      const { data: existingBookings, error: checkError } = await supabase
+        .from(BOOKINGS_TABLE)
+        .select('id')
+        .eq('status', 'active')
+        .eq('year', year)
+        .like('name', `%(${bookingData.receipt_no})%`);
+
+      if (checkError) {
+        console.error('Error checking duplicate booking:', checkError);
+        return { success: false, error: "Failed to verify existing bookings." };
+      }
+
+      if (existingBookings && existingBookings.length > 0) {
+        return { success: false, error: "This receipt has already been used for a Pooja booking." };
+      }
+    }
+
     const bookingId =
       crypto.randomUUID?.() ||
       Math.random().toString(36).substring(2, 11);
@@ -95,7 +114,7 @@ export const bookPoojaSlot = async (
       .insert({
         id: bookingId,
         slot_id: slotId,
-        name: bookingData.name,
+        name: bookingData.receipt_no ? `${bookingData.name} (${bookingData.receipt_no})` : bookingData.name,
         phone: bookingData.phone,
         status: 'active',
         year: year

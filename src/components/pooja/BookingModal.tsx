@@ -1,22 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PoojaSlot, PoojaBookingData } from '../../types/pooja';
 import { MaskedPhoneInput } from '../MaskedPhoneInput';
 import { normalizePhoneDigits } from '../../lib/privacy';
-import { X } from 'lucide-react';
+import { X, Lock } from 'lucide-react';
 
 interface BookingModalProps {
   slot: PoojaSlot | null;
   onClose: () => void;
   onBook: (slotId: string, data: PoojaBookingData) => Promise<void>;
   isSubmitting: boolean;
+  verifiedName?: string | null;
+  verifiedPhone?: string | null;
 }
 
-const BookingModal: React.FC<BookingModalProps> = ({ slot, onClose, onBook, isSubmitting }) => {
+const BookingModal: React.FC<BookingModalProps> = ({ slot, onClose, onBook, isSubmitting, verifiedName, verifiedPhone }) => {
   const [formData, setFormData] = useState<PoojaBookingData>({
     name: '',
     phone: '',
   });
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (slot) {
+      setFormData({
+        name: verifiedName || '',
+        phone: verifiedPhone || '',
+      });
+      setError(null);
+    }
+  }, [slot, verifiedName, verifiedPhone]);
 
   if (!slot) return null;
 
@@ -28,7 +40,7 @@ const BookingModal: React.FC<BookingModalProps> = ({ slot, onClose, onBook, isSu
     }
     setError(null);
     await onBook(slot.id, { ...formData, phone: normalizePhoneDigits(formData.phone) });
-    setFormData({ name: '', phone: '' });
+    setFormData({ name: verifiedName || '', phone: verifiedPhone || '' });
   };
 
   return (
@@ -70,14 +82,22 @@ const BookingModal: React.FC<BookingModalProps> = ({ slot, onClose, onBook, isSu
             <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-2">
                     <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Family Last Name / Gotram</label>
-                    <input 
-                        type="text" 
-                        required
-                        className="w-full h-14 bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-gray-800 font-bold placeholder:text-gray-300"
-                        placeholder=""
-                        value={formData.name}
-                        onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    />
+                    <div className="relative">
+                        <input 
+                            type="text" 
+                            required
+                            readOnly={!!verifiedName}
+                            className={`w-full h-14 border-2 rounded-2xl px-5 focus:outline-none transition-all text-gray-800 font-bold placeholder:text-gray-300 ${verifiedName ? 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed pr-12' : 'bg-gray-50 border-gray-100 focus:border-orange-500 focus:bg-white'}`}
+                            placeholder=""
+                            value={formData.name}
+                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        />
+                        {verifiedName && (
+                            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-green-600">
+                                <Lock size={18} />
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div className="space-y-2">

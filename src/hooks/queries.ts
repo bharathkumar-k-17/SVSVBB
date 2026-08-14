@@ -691,3 +691,40 @@ export const useRecordsData = (year: number) => {
     refetchOnWindowFocus: false,
   });
 };
+
+// --- QR Portal Chanda Reviews ---
+
+export const usePendingQRChandaRequests = () => {
+  return useQuery({
+    queryKey: ['pendingQRChandaRequests'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('public_chanda_requests')
+        .select('*')
+        .eq('status', 'PENDING_REVIEW')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
+  });
+};
+
+export const useQRChandaHistory = () => {
+  return useQuery({
+    queryKey: ['qrChandaHistory'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('public_chanda_requests')
+        .select('*')
+        .in('status', ['ACCEPTED', 'REJECTED'])
+        .order('updated_at', { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+};
