@@ -7,7 +7,7 @@ import { Check, X, Eye, Phone, MessageCircle, AlertCircle, Clock } from 'lucide-
 export function QRChandaReviews() {
   const { appUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'PENDING' | 'HISTORY'>('PENDING');
-  
+
   const { data: pendingRequests, isLoading: isLoadingPending, refetch: refetchPending } = usePendingQRChandaRequests();
   const { data: historyRequests, isLoading: isLoadingHistory, refetch: refetchHistory } = useQRChandaHistory();
 
@@ -20,9 +20,13 @@ export function QRChandaReviews() {
 
   const handleViewProof = async (path: string) => {
     try {
-      const { data } = await supabase.storage.from('payment-proofs').getPublicUrl(path);
-      if (data?.publicUrl) {
-        setProofUrl(data.publicUrl);
+      // 1. We must use createSignedUrl because payment-proofs is a private bucket
+      const { data, error } = await supabase.storage.from('payment-proofs').createSignedUrl(path, 60 * 60); // 1 hour expiry
+
+      if (error) throw error;
+
+      if (data?.signedUrl) {
+        setProofUrl(data.signedUrl);
         setShowProofModal(true);
       }
     } catch (err) {
@@ -81,7 +85,7 @@ export function QRChandaReviews() {
             <span>{new Date(req.created_at).toLocaleString()}</span>
           </div>
         </div>
-        
+
         <div className="flex items-baseline gap-2 mb-4">
           <span className="text-2xl font-black text-gray-900">₹{req.paid_amount}</span>
           {req.pending_amount > 0 && <span className="text-sm text-red-500 font-medium">(Pending: ₹{req.pending_amount})</span>}
@@ -90,23 +94,23 @@ export function QRChandaReviews() {
 
       <div className="flex flex-col gap-2 w-full md:w-auto">
         {req.payment_mode === 'UPI' && req.payment_proof_path && (
-          <button 
+          <button
             onClick={() => handleViewProof(req.payment_proof_path)}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 rounded-xl hover:bg-purple-100 transition-colors font-semibold"
           >
             <Eye size={16} /> View Proof
           </button>
         )}
-        
+
         <div className="grid grid-cols-2 gap-2">
-          <button 
+          <button
             disabled={processingId === req.id}
             onClick={() => processRequest(req.id, 'ACCEPT')}
             className="flex items-center justify-center gap-1.5 px-4 py-2 bg-green-50 text-green-700 rounded-xl hover:bg-green-100 transition-colors font-bold disabled:opacity-50"
           >
             {processingId === req.id ? '...' : <><Check size={18} /> Accept</>}
           </button>
-          <button 
+          <button
             disabled={processingId === req.id}
             onClick={() => setShowRejectModal(req.id)}
             className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 text-red-700 rounded-xl hover:bg-red-100 transition-colors font-bold disabled:opacity-50"
@@ -117,13 +121,13 @@ export function QRChandaReviews() {
 
         {/* WhatsApp & Call */}
         <div className="grid grid-cols-2 gap-2">
-          <a 
+          <a
             href={`tel:${req.phone}`}
             className="flex items-center justify-center gap-1.5 px-4 py-2 bg-gray-50 text-gray-700 rounded-xl hover:bg-gray-100 transition-colors font-semibold"
           >
             <Phone size={14} /> Call
           </a>
-          <a 
+          <a
             href={`https://wa.me/91${req.phone}`}
             target="_blank"
             rel="noopener noreferrer"
@@ -171,17 +175,15 @@ export function QRChandaReviews() {
       <div className="flex bg-white rounded-xl shadow-sm border border-gray-100 p-1 mb-6 inline-flex">
         <button
           onClick={() => setActiveTab('PENDING')}
-          className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-            activeTab === 'PENDING' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
+          className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'PENDING' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
         >
           Pending Review {(pendingRequests?.length || 0) > 0 && `(${pendingRequests?.length})`}
         </button>
         <button
           onClick={() => setActiveTab('HISTORY')}
-          className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
-            activeTab === 'HISTORY' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
+          className={`px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'HISTORY' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
         >
           Review History
         </button>
@@ -229,13 +231,13 @@ export function QRChandaReviews() {
               onChange={e => setRejectReason(e.target.value)}
             />
             <div className="flex gap-3">
-              <button 
+              <button
                 onClick={() => setShowRejectModal(null)}
                 className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={() => processRequest(showRejectModal, 'REJECT', rejectReason)}
                 className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700"
               >
@@ -249,16 +251,16 @@ export function QRChandaReviews() {
       {/* Proof Modal */}
       {showProofModal && proofUrl && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 flex-col">
-          <button 
+          <button
             onClick={() => setShowProofModal(false)}
             className="absolute top-4 right-4 bg-white/20 p-2 rounded-full hover:bg-white/40 text-white"
           >
             <X size={24} />
           </button>
           <img src={proofUrl} alt="Payment Proof" className="max-w-full max-h-[80vh] rounded-xl object-contain mb-4" />
-          <a 
-            href={proofUrl} 
-            target="_blank" 
+          <a
+            href={proofUrl}
+            target="_blank"
             rel="noopener noreferrer"
             className="px-6 py-2 bg-white text-gray-900 rounded-full font-bold hover:bg-gray-100"
           >

@@ -12,7 +12,7 @@ export default {
     if (req.method === 'OPTIONS') {
       return new Response('ok', { headers: corsHeaders });
     }
-    
+
     // We wrap the actual logic in withSupabase to get ctx.supabaseAdmin
     const handler = withSupabase({ auth: ["publishable", "secret"] }, async (req, ctx) => {
       if (req.method !== 'POST') {
@@ -49,41 +49,41 @@ export default {
 
         // 2. Validate fields
         if (!name || typeof name !== 'string') {
-          return new Response(JSON.stringify({ error: 'Name is required' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Name is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         const tAmt = Number(total_amount) || 0;
         const pAmt = Number(paid_amount) || 0;
-        
+
         if (tAmt < 0 || pAmt < 0 || pAmt > tAmt) {
-          return new Response(JSON.stringify({ error: 'Invalid amounts' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Invalid amounts' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         // Enterprise Validation
-        if (!paid_to_user_id) {
-          return new Response(JSON.stringify({ error: 'Paid To recipient is required' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        if (payment_mode === 'Cash' && !paid_to_user_id) {
+          return new Response(JSON.stringify({ error: 'Paid To recipient is required for Cash payments' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         if (payment_mode === 'UPI' && !payment_proof_path) {
-          return new Response(JSON.stringify({ error: 'Payment proof is required for UPI transactions' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Payment proof is required for UPI transactions' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         // 8. Prevent duplicate submissions
         if (phone && typeof phone === 'string' && phone.length === 10) {
           const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-          
+
           if (isPortal) {
             const { data: recentEntries, error: checkError } = await ctx.supabaseAdmin
               .from('public_chanda_requests')
@@ -94,9 +94,9 @@ export default {
 
             if (checkError) throw checkError;
             if (recentEntries && recentEntries.length > 0) {
-              return new Response(JSON.stringify({ error: 'Please wait a few minutes before submitting again.' }), { 
-                status: 429, 
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+              return new Response(JSON.stringify({ error: 'Please wait a few minutes before submitting again.' }), {
+                status: 429,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
             }
           } else {
@@ -109,9 +109,9 @@ export default {
 
             if (checkError) throw checkError;
             if (recentEntries && recentEntries.length > 0) {
-              return new Response(JSON.stringify({ error: 'Please wait a few minutes before submitting again.' }), { 
-                status: 429, 
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+              return new Response(JSON.stringify({ error: 'Please wait a few minutes before submitting again.' }), {
+                status: 429,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
             }
           }
@@ -141,8 +141,7 @@ export default {
             payment_proof_path: payment_proof_path || null,
             payment_proof_name: payment_proof_name || null,
             payment_proof_type: payment_proof_type || null,
-            gotram: gotram || '',
-            family_members: Array.isArray(family_members) ? family_members : [],
+            gotram: gotram ? `${gotram}${Array.isArray(family_members) && family_members.length > 0 ? ` - Family: ${family_members.join(', ')}` : ''}` : '',
             status: 'PENDING_REVIEW',
             created_at: created_at || now,
             updated_at: new Date(now).toISOString()
@@ -154,7 +153,10 @@ export default {
             .select('id')
             .single();
 
-          if (insertError) throw insertError;
+          if (insertError) {
+            console.error('[CREATE CHANDA] DB error (public_chanda_requests):', insertError);
+            throw insertError;
+          }
           devoteeId = insertedRow.id;
 
           // Notifications for Portal
@@ -220,7 +222,10 @@ export default {
             .select('id')
             .single();
 
-          if (insertError) throw insertError;
+          if (insertError) {
+            console.error('[CREATE CHANDA] DB error (devotees):', insertError);
+            throw insertError;
+          }
           devoteeId = insertedRow.id;
 
           // Payment history
@@ -284,16 +289,19 @@ export default {
           devoteeId,
           receiptNo,
           message: 'Submission successful'
-        }), { 
-          status: 200, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
 
       } catch (error: any) {
-        console.error("Error in create-chanda function:", error);
-        return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        console.error("[CREATE CHANDA] error:", error);
+        return new Response(JSON.stringify({
+          error: 'CREATE_CHANDA_ERROR',
+          message: error.message || 'Internal Server Error'
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
     });
