@@ -3,14 +3,18 @@ import { withSupabase } from "@supabase/server";
 import { generateReceiptNo, getDynamicReceiptPrefix } from "../_shared/receipt.ts";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://svsvbb.vercel.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 export default {
   async fetch(req: Request) {
     if (req.method === 'OPTIONS') {
-      return new Response('ok', { headers: corsHeaders });
+      return new Response('ok', {
+        status: 200,
+        headers: corsHeaders,
+      });
     }
 
     // We wrap the actual logic in withSupabase to get ctx.supabaseAdmin

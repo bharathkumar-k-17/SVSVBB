@@ -3,16 +3,20 @@ import { withSupabase } from "@supabase/server";
 import { generateReceiptNo, getDynamicReceiptPrefix } from "../_shared/receipt.ts";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://svsvbb.vercel.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 export default {
   async fetch(req: Request) {
     if (req.method === 'OPTIONS') {
-      return new Response('ok', { headers: corsHeaders });
+      return new Response('ok', {
+        status: 200,
+        headers: corsHeaders,
+      });
     }
-    
+
     const handler = withSupabase({ auth: ["publishable", "secret"] }, async (req, ctx) => {
       if (req.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
@@ -30,9 +34,9 @@ export default {
         } = body;
 
         if (!request_id || !action || !reviewer_id) {
-          return new Response(JSON.stringify({ error: 'Missing required fields' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -44,16 +48,16 @@ export default {
           .single();
 
         if (fetchError || !qrRequest) {
-          return new Response(JSON.stringify({ error: 'Request not found' }), { 
-            status: 404, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Request not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
         if (qrRequest.status !== 'PENDING_REVIEW') {
-          return new Response(JSON.stringify({ error: 'Request is already processed' }), { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ error: 'Request is already processed' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -88,9 +92,9 @@ export default {
             audience_roles: ['superadmin', 'admin'],
           });
 
-          return new Response(JSON.stringify({ success: true, message: 'Request rejected successfully' }), { 
-            status: 200, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          return new Response(JSON.stringify({ success: true, message: 'Request rejected successfully' }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -99,7 +103,7 @@ export default {
           const currentYearStr = new Date().getFullYear().toString().slice(-2);
           const counterKey = `receipt_${currentYearStr}`;
           const { data: existing } = await ctx.supabaseAdmin.from('counters').select('count').eq('id', counterKey).single();
-          
+
           let currentCount = 1;
           if (existing) {
             currentCount = (existing.count || 0) + 1;
@@ -107,10 +111,10 @@ export default {
           } else {
             await ctx.supabaseAdmin.from('counters').insert({ id: counterKey, count: 1 });
           }
-          
+
           const receiptNo = generateReceiptNo(currentCount);
           const currentYear = new Date().getFullYear();
-          
+
           const tAmt = Number(qrRequest.total_amount) || 0;
           const pAmt = Number(qrRequest.paid_amount) || 0;
           const pending = tAmt - pAmt;
@@ -213,27 +217,27 @@ export default {
             audience_roles: ['superadmin', 'admin'],
           });
 
-          return new Response(JSON.stringify({ 
-            success: true, 
+          return new Response(JSON.stringify({
+            success: true,
             message: 'Request accepted successfully',
             devoteeId,
             receiptNo
-          }), { 
-            status: 200, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
-        return new Response(JSON.stringify({ error: 'Invalid action' }), { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        return new Response(JSON.stringify({ error: 'Invalid action' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
 
       } catch (error: any) {
         console.error("Error in review-qr-chanda function:", error);
-        return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
     });
