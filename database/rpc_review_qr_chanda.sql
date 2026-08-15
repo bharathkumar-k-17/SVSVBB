@@ -159,8 +159,7 @@ BEGIN
     INSERT INTO devotees (
         name, phone, total_amount, paid_amount, pending_amount, 
         donation_item, payment_mode, payment_status, gotram, family_members, 
-        year, volunteer_id, volunteer_name, volunteer_phone, created_at, receipt_no,
-        payment_proof_path, payment_proof_name, payment_proof_type, payment_proof_status
+        year, volunteer_id, volunteer_name, volunteer_phone, created_at, receipt_no
     ) VALUES (
         v_request.name,
         COALESCE(v_request.phone, ''),
@@ -177,11 +176,7 @@ BEGIN
         v_user.name,
         COALESCE(v_user.phone, ''),
         v_now,
-        v_receipt_no,
-        v_request.payment_proof_path,
-        v_request.payment_proof_name,
-        v_request.payment_proof_type,
-        CASE WHEN v_request.payment_proof_path IS NOT NULL THEN 'UPI_PAYMENT_PROOF_VERIFIED' ELSE NULL END
+        v_receipt_no
     ) RETURNING id INTO v_devotee_id;
 
     -- 5. Mark Request Accepted
