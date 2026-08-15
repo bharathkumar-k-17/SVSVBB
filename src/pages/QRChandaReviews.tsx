@@ -39,19 +39,21 @@ export function QRChandaReviews() {
     if (!appUser) return;
     setProcessingId(id);
     try {
-      const { data, error } = await supabase.functions.invoke('review-qr-chanda', {
-        body: {
-          request_id: id,
-          action,
-          rejection_reason: reason,
-          reviewer_id: appUser.id || appUser.email, // Edge function uses reviewer_id
-          reviewer_name: appUser.name,
-          reviewer_phone: appUser.phone
-        }
-      });
+      let data, error;
+
+      if (action === 'ACCEPT') {
+        ({ data, error } = await supabase.rpc('review_qr_chanda_accept', {
+          p_request_id: id
+        }));
+      } else if (action === 'REJECT') {
+        ({ data, error } = await supabase.rpc('review_qr_chanda_reject', {
+          p_request_id: id,
+          p_rejection_reason: reason || ''
+        }));
+      }
 
       if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      if (data?.error) throw new Error(data.error);
 
       alert(`Request ${action.toLowerCase()}ed successfully!`);
       setShowRejectModal(null);
