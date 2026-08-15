@@ -62,7 +62,8 @@ export function QRChandaReviews() {
       refetchHistory();
     } catch (err: any) {
       console.error(err);
-      alert(`Failed to process: ${err.message}`);
+      const errorMessage = err.message || err.details || err.hint || JSON.stringify(err);
+      alert(`Error: ${errorMessage}`);
     } finally {
       setProcessingId(null);
     }
