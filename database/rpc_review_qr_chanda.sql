@@ -202,7 +202,7 @@ BEGIN
             v_user.id,
             v_user.name,
             v_year,
-            v_request.payment_proof_path
+            v_request.transaction_id
         );
     END IF;
 
