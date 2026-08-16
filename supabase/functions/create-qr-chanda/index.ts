@@ -51,7 +51,24 @@ export default {
                     return new Response(JSON.stringify({ success: false, error: 'Paid To information required' }), { status: 400, headers: corsHeaders });
                 }
 
+                currentStep = 'Duplicate Protection Check';
                 const now = Date.now();
+                const fiveMinutesAgo = now - (5 * 60 * 1000);
+                const { data: recentEntries, error: checkError } = await ctx.supabaseAdmin
+                    .from('devotees')
+                    .select('id')
+                    .eq('phone', phone)
+                    .gte('created_at', fiveMinutesAgo)
+                    .limit(1);
+
+                if (checkError) {
+                    throw checkError;
+                }
+
+                if (recentEntries && recentEntries.length > 0) {
+                    return new Response(JSON.stringify({ success: false, error: 'Duplicate submission detected. Please wait before submitting again.', code: 'DUPLICATE_ENTRY' }), { status: 429, headers: corsHeaders });
+                }
+
                 const year = new Date().getFullYear();
 
                 currentStep = 'generating receipt';
@@ -87,10 +104,10 @@ export default {
                     volunteer_name: paidToName || 'Portal',
                     volunteer_phone: paidToPhone || '',
                     created_at: now,
-                    receipt_no: receiptNo,
-                    payment_proof_path: payment_proof_path || null,
-                    payment_proof_name: payment_proof_name || null,
-                    payment_proof_type: payment_proof_type || null
+                    receipt_no: receiptNo
+                    // Intentionally omitting payment_proof_path, payment_proof_name, payment_proof_type here 
+                    // as they may not exist natively in the table and could cause 500 rejection 
+                    // compared to the working add-devotee flow.
                 };
 
                 const { data: insertedDevotee, error: devoteeError } = await ctx.supabaseAdmin
@@ -142,9 +159,10 @@ export default {
                 }
 
                 currentStep = 'notification';
+                const amountStr = new Intl.NumberFormat('en-IN').format(pAmt);
                 await ctx.supabaseAdmin.from('notifications').insert({
-                    type: 'QR CHANDA PORTAL',
-                    message: `New Web Chanda received from ${name.trim()} for ₹${pAmt}. Receipt: ${receiptNo}.`,
+                    type: 'QR CHANDA',
+                    message: `${name.trim()} registered ₹${amountStr} by self and paid to ${paidToName || 'the Committee'}.\nReceipt: ${receiptNo}`,
                     amount: pAmt,
                     created_at: now,
                     created_by: paidToUserId,
@@ -164,9 +182,15 @@ export default {
                 });
             } catch (error: any) {
                 console.error(`[create-qr-chanda ERROR] failed at step: ${currentStep}`, error);
+
+                let actualErrorMsg = error.message || String(error);
+                if (error.details) actualErrorMsg += ` | details: ${error.details}`;
+                if (error.hint) actualErrorMsg += ` | hint: ${error.hint}`;
+
                 return new Response(JSON.stringify({
                     success: false,
-                    error: error.message || String(error),
+                    error: actualErrorMsg,
+                    code: error.code || 'UNKNOWN',
                     step: currentStep
                 }), {
                     status: 500,

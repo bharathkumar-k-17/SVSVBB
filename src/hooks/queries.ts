@@ -692,4 +692,48 @@ export const useRecordsData = (year: number) => {
   });
 };
 
+export const useDailyRecords = (year: number) => {
+  return useQuery({
+    queryKey: ['dailyRecords', year],
+    queryFn: async () => {
+      const { data: payments, error: payError } = await supabase
+        .from('payment_histories')
+        .select('id, amount, mode, date, devotee_id, volunteer_name')
+        .eq('year', year)
+        .order('date', { ascending: true });
 
+      if (payError) throw payError;
+
+      const { data: devs, error: devError } = await supabase
+        .from('devotees')
+        .select('id, name, phone, receipt_no, total_amount, paid_amount')
+        .eq('year', year);
+
+      if (devError) throw devError;
+
+      const { data: settings } = await supabase
+        .from('app_settings')
+        .select('festival_start_date')
+        .eq('id', 'app')
+        .single();
+
+      const devoteesMap = new Map(devs?.map(d => [d.id, d]));
+
+      let globalPending = 0;
+      devs?.forEach(d => {
+        const pending = (d.total_amount || 0) - (d.paid_amount || 0);
+        if (pending > 0) globalPending += pending;
+      });
+
+      return {
+        payments: payments || [],
+        devoteesMap,
+        totalDevotees: devs?.length || 0,
+        globalPending,
+        startDate: settings?.festival_start_date ? String(settings.festival_start_date) : null
+      };
+    },
+    enabled: !!year,
+    staleTime: 60 * 1000,
+  });
+};

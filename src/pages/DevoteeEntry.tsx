@@ -139,7 +139,7 @@ export function DevoteeEntry() {
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
                     <HeartHandshake className="text-primary" />
-                    Devotee Entry
+                    Chanda Entry
                 </h2>
 
                 {success && lastSavedDevotee ? (
@@ -147,7 +147,7 @@ export function DevoteeEntry() {
                         <div className="p-4 bg-green-50 text-green-800 rounded-lg border border-green-200 shadow-sm flex flex-col gap-3 items-center mb-6">
                             <span className="font-bold flex items-center gap-2 text-lg">✅ Entry Saved Successfully!</span>
                         </div>
-                        <Receipt data={lastSavedDevotee} isBlank={false} hideActions={false} isPortal={false} />
+                        <Receipt data={lastSavedDevotee} isBlank={false} hideActions={false} isPortal={false} hideDownloads={true} />
                         <button
                             onClick={handleReset}
                             className="mt-6 w-full flex items-center justify-center py-3 border border-gray-300 rounded-xl shadow-sm bg-white font-bold text-gray-700 hover:bg-gray-50 transition-colors"
@@ -317,7 +317,7 @@ export function DevoteeEntry() {
                             {loading ? (
                                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
                             ) : (
-                                <> <Save size={24} /> Save Devotee Entry </>
+                                <> <Save size={24} /> Save Chanda Entry </>
                             )}
                         </button>
                     </form>

@@ -20,16 +20,16 @@ export function Dashboard() {
   const { data: stats, isLoading } = useDashboardStats(currentYear);
 
   const totalCollected = stats?.totalCollected || 0;
-  const totalPending   = stats?.totalPending || 0;
-  const totalExpenses  = stats?.totalExpenses || 0;
+  const totalPending = stats?.totalPending || 0;
+  const totalExpenses = stats?.totalExpenses || 0;
   const todayCollection = stats?.todayCollection || 0;
-  const vipCount       = stats?.vipCount || 0;
-  const devoteesCount  = stats?.devoteesCount || 0;
+  const vipCount = stats?.vipCount || 0;
+  const devoteesCount = stats?.devoteesCount || 0;
   const myTodayCollection = stats?.myTodayCollection || 0;
   const myDevoteesCount = stats?.myDevoteesCount || 0;
   const expensesCount = stats?.expensesCount || 0;
 
-  const netBalance     = totalCollected - totalExpenses;
+  const netBalance = totalCollected - totalExpenses;
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -49,6 +49,16 @@ export function Dashboard() {
         { text: `₹${(isVolunteer ? myTodayCollection : totalCollected).toLocaleString()} collected`, classes: 'text-pink-700 bg-pink-50 border-pink-100' },
       ],
       show: true,
+    },
+    {
+      id: 'devotees',
+      label: 'Devotees',
+      path: '/devotees',
+      image: '/Devotees.jpeg',
+      stats: [
+        { text: `${devoteesCount} registered`, classes: 'text-indigo-700 bg-indigo-50 border-indigo-100' },
+      ],
+      show: !isVolunteer,
     },
     {
       id: 'expenses',
@@ -82,16 +92,7 @@ export function Dashboard() {
       ],
       show: !isVolunteer,
     },
-    {
-      id: 'devotees',
-      label: 'Devotees',
-      path: '/devotees',
-      image: '/Devotees.jpeg',
-      stats: [
-        { text: `${devoteesCount} registered`, classes: 'text-indigo-700 bg-indigo-50 border-indigo-100' },
-      ],
-      show: !isVolunteer,
-    },
+
     {
       id: 'cultural',
       label: 'Cultural Activities',
@@ -113,6 +114,7 @@ export function Dashboard() {
       ],
       show: !isVolunteer,
     },
+
     {
       id: 'qr-portal',
       label: 'QR Portal',
@@ -292,7 +294,7 @@ export function Dashboard() {
           <span className="w-1.5 h-5 bg-gradient-to-b from-purple-500 to-pink-500 rounded-full inline-block shadow-sm" />
           Dashboard Modules
         </h2>
-        
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 lg:gap-6 w-full">
           {actionCards.filter(card => card.show).map((card) => (
             <button

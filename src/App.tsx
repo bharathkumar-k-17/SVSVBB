@@ -23,6 +23,7 @@ const VIPGotram = lazy(() => import('./pages/VIPGotram').then(m => ({ default: m
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const Payments = lazy(() => import('./pages/Payments').then(m => ({ default: m.Payments })));
 const Records = lazy(() => import('./pages/Records').then(m => ({ default: m.Records })));
+const DailyRecords = lazy(() => import('./pages/DailyRecords').then(m => ({ default: m.DailyRecords })));
 const SPLRecords = lazy(() => import('./pages/SPLRecords').then(m => ({ default: m.SPLRecords })));
 const PoojaBooking = lazy(() => import('./pages/PoojaBooking'));
 const UserManagement = lazy(() => import('./pages/UserManagement').then(m => ({ default: m.UserManagement })));
@@ -151,6 +152,14 @@ export default function App() {
                 element={
                   <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                     <Records />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/daily-records"
+                element={
+                  <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
+                    <DailyRecords />
                   </ProtectedRoute>
                 }
               />

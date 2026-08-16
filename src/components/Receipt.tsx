@@ -45,6 +45,8 @@ interface ReceiptProps {
   qrValue?: string;
   hideActions?: boolean;
   isPortal?: boolean;
+  hideDownloads?: boolean;
+  renderTrigger?: (actions: { downloadPDF: () => Promise<void>; loading: boolean }) => React.ReactNode;
 }
 
 /* ─── Helpers ─────────────────────────────────── */
@@ -61,7 +63,7 @@ const parseFamilyMembers = (fm: FamilyMembers): string[] => {
 
 /* ─── Main Component ──────────────────────────── */
 export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
-  ({ data, currentYear, isBlank = false, logoSrc: customLogoSrc, qrValue, hideActions = false, isPortal = false }, ref) => {
+  ({ data, currentYear, isBlank = false, logoSrc: customLogoSrc, qrValue, hideActions = false, isPortal = false, hideDownloads = false, renderTrigger }, ref) => {
     const globalLogo = useGlobalLogo();
     const logoSrc = customLogoSrc || globalLogo;
     const exportRef = useRef<HTMLDivElement>(null);
@@ -84,7 +86,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
           const { data } = await supabase.from('app_settings').select('upi_id, chanda_confirmation_template').eq('id', 'app').maybeSingle();
           if (data?.upi_id) setUpiId(data.upi_id);
           if (data) setTemplates(data);
-        } catch (err) {}
+        } catch (err) { }
       };
       fetchSettings();
     }, []);
@@ -92,48 +94,48 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
     /* ─ Resize Observer removed for native responsive layout ─ */
 
     /* ─ Derived values ─ */
-    const createdAt   = !isBlank && data?.createdAt ? new Date(data.createdAt) : new Date();
+    const createdAt = !isBlank && data?.createdAt ? new Date(data.createdAt) : new Date();
     const displayYear = currentYear ?? data?.year ?? createdAt.getFullYear();
-    const receiptNo   = isBlank ? `${getDynamicReceiptPrefix()}___` : (data?.receiptNo || `${getDynamicReceiptPrefix()}001`);
-    const totalAmt    = Number(data?.totalAmount ?? 0);
-    const paidAmt     = Number(data?.paidAmount ?? 0);
-    const pendingAmt  = Math.max(Number(data?.pendingAmount ?? (totalAmt - paidAmt)), 0);
-    const members     = parseFamilyMembers(data?.familyMembers);
-    const isVip       = Boolean(data?.gotram?.trim()) || members.length > 0;
-    const isAck       = paidAmt === 0;
-    const payMode     = (data?.paymentMode || 'Cash').toUpperCase();
+    const receiptNo = isBlank ? `${getDynamicReceiptPrefix()}___` : (data?.receiptNo || `${getDynamicReceiptPrefix()}001`);
+    const totalAmt = Number(data?.totalAmount ?? 0);
+    const paidAmt = Number(data?.paidAmount ?? 0);
+    const pendingAmt = Math.max(Number(data?.pendingAmount ?? (totalAmt - paidAmt)), 0);
+    const members = parseFamilyMembers(data?.familyMembers);
+    const isVip = Boolean(data?.gotram?.trim()) || members.length > 0;
+    const isAck = paidAmt === 0;
+    const payMode = (data?.paymentMode || 'Cash').toUpperCase();
 
     /* ─ Advanced Dynamic UPI QR Logic ─ */
-    const isUnpaid       = paidAmt === 0;
-    const isPartial      = paidAmt > 0 && pendingAmt > 0;
-    const isFullyPaid    = pendingAmt === 0 && paidAmt > 0;
+    const isUnpaid = paidAmt === 0;
+    const isPartial = paidAmt > 0 && pendingAmt > 0;
+    const isFullyPaid = pendingAmt === 0 && paidAmt > 0;
 
     // Show Payment QR if there's any pending amount
-    const showPaymentQR  = (isUnpaid || isPartial) && !!upiId;
-    
+    const showPaymentQR = (isUnpaid || isPartial) && !!upiId;
+
     // Show Verification QR only if fully paid and not Cash
-    const showVerifyQR   = isFullyPaid && !payMode.includes('CASH');
-    
-    const showQR         = showPaymentQR || showVerifyQR;
+    const showVerifyQR = isFullyPaid && !payMode.includes('CASH');
+
+    const showQR = showPaymentQR || showVerifyQR;
 
     // Build standard UPI string: upi://pay?pa={UPI_ID}&pn={APP_NAME}&am={PENDING_AMOUNT}&cu=INR
     const upiQrValue = useMemo(() => {
       if (!upiId || pendingAmt <= 0) return '';
       // Cross-platform compatible display name
-      const appName = 'SVSVBB'; 
+      const appName = 'SVSVBB';
       const transactionNote = `Receipt-${receiptNo}`;
-      
+
       return `upi://pay?pa=${upiId}&pn=${encodeURIComponent(appName)}&am=${pendingAmt.toFixed(2)}&cu=INR&tn=${encodeURIComponent(transactionNote)}`;
     }, [upiId, pendingAmt, receiptNo]);
     const verifyQrValue = useMemo(() =>
       [`SVSVBB Receipt`, `No: ${receiptNo}`, `Year: ${displayYear}`,
-       `Name: ${data?.name || '-'}`, `Ph: ${data?.phone || '-'}`,
-       `Total: ${totalAmt}`, `Paid: ${paidAmt}`, `Pending: ${pendingAmt}`, `Mode: ${payMode}`].join('\n'),
+        `Name: ${data?.name || '-'}`, `Ph: ${data?.phone || '-'}`,
+        `Total: ${totalAmt}`, `Paid: ${paidAmt}`, `Pending: ${pendingAmt}`, `Mode: ${payMode}`].join('\n'),
       [data?.name, data?.phone, displayYear, paidAmt, pendingAmt, payMode, receiptNo, totalAmt],
     );
 
     const dateLabel = isBlank ? 'DD/MM/YYYY' : new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(createdAt);
-    const timeLabel = isBlank ? '--:-- --'   : new Intl.DateTimeFormat('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).format(createdAt);
+    const timeLabel = isBlank ? '--:-- --' : new Intl.DateTimeFormat('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).format(createdAt);
 
     /* ─ Export helpers ─ */
     const capture = async () => {
@@ -231,32 +233,42 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
 
     return (
       <div className="w-full" ref={containerRef}>
-        {(!hideActions && !isPortal) && (
+        {renderTrigger ? (
+          renderTrigger({ downloadPDF, loading: loading === 'pdf' })
+        ) : (!hideActions && !isPortal) && (
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-3 mb-5 print:hidden">
-            <button onClick={downloadPDF} disabled={!!loading} className={BtnClass('bg-red-600 text-white hover:bg-red-700')}>
-              {loading === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download PDF
-            </button>
-            <button onClick={downloadImage} disabled={!!loading} className={BtnClass('bg-amber-500 text-white hover:bg-amber-600')}>
-              {loading === 'img' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />} Save Image
-            </button>
+            {!hideDownloads && (
+              <>
+                <button onClick={downloadPDF} disabled={!!loading} className={BtnClass('bg-red-600 text-white hover:bg-red-700')}>
+                  {loading === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download PDF
+                </button>
+                <button onClick={downloadImage} disabled={!!loading} className={BtnClass('bg-amber-500 text-white hover:bg-amber-600')}>
+                  {loading === 'img' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />} Save Image
+                </button>
+              </>
+            )}
+
             <button onClick={shareWhatsApp} disabled={!!loading} className={BtnClass('bg-green-500 text-white hover:bg-green-600')}>
               {loading === 'wa' ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} WhatsApp
             </button>
-            
+
             <button onClick={shareSMS} className={BtnClass('bg-blue-600 text-white hover:bg-blue-700')}>
               <Share2 size={16} /> SMS
             </button>
-            <button onClick={() => window.print()} disabled={!!loading} className={BtnClass('bg-gray-700 text-white hover:bg-gray-800')}>
-              <Printer size={16} /> Print
-            </button>
+
+            {!hideDownloads && (
+              <button onClick={() => window.print()} disabled={!!loading} className={BtnClass('bg-gray-700 text-white hover:bg-gray-800')}>
+                <Printer size={16} /> Print
+              </button>
+            )}
           </div>
         )}
 
         {/* ── A4 Receipt Card ──
             Using max-w-[794px] for responsive web, but PDF generation forces 794px
         ── */}
-        <div 
-          className="mx-auto flex justify-center w-full max-w-[794px] box-border"
+        <div
+          className={`mx-auto flex justify-center box-border ${renderTrigger ? 'fixed -left-[9999px] -top-[9999px]' : 'w-full max-w-[794px]'}`}
         >
           <div
             className="w-full"
@@ -264,302 +276,305 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
             <div
               ref={exportRef}
               id="receipt-export-container"
-              className="relative bg-white border-2 border-amber-400 shadow-xl w-full mx-auto"
+              className="relative bg-white border-2 border-amber-400 shadow-xl mx-auto"
               style={{
+                width: renderTrigger ? '794px' : '100%',
                 fontFamily: "'Segoe UI', 'Noto Sans Telugu', sans-serif",
                 breakInside: 'avoid',
               }}
             >
-          {/* ── FULL-PAGE WATERMARK ── */}
-          <div
-            className="pointer-events-none select-none absolute inset-0 flex items-center justify-center z-0 overflow-hidden"
-          >
-            <img
-              src={logoSrc}
-              alt=""
-              className="w-1/2 sm:w-[480px] object-cover opacity-[0.35]"
-              style={{ aspectRatio: '1/1', borderRadius: '50%' }}
-            />
-          </div>
-
-          {/* ── INNER CONTENT (above watermark) ── */}
-          <div className="relative z-10 flex flex-col h-full" style={{ minHeight: '1123px' }}>
-
-            {/* ════ HEADER ════ */}
-            <div
-              className="flex items-center justify-between px-2 sm:px-10 py-4 sm:py-6 gap-2 sm:gap-0 border-b-4 border-amber-400"
-              style={{ background: 'linear-gradient(135deg, rgba(255,247,237,0.85) 0%, rgba(254,243,199,0.85) 50%, rgba(255,247,237,0.85) 100%)' }}
-            >
-              {/* Left Logo */}
-              <img
-                src={logoSrc} alt="Logo"
-                className="w-10 h-10 sm:w-[90px] sm:h-[90px]"
-                style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
-              />
-
-              {/* Center Text */}
-              <div className="px-1 sm:px-6" style={{ textAlign: 'center', flex: 1 }}>
-                <p className="text-[14px] sm:text-[22px]" style={{ fontWeight: 900, color: '#7c2d12', lineHeight: 1.3, letterSpacing: '0.02em' }}>
-                  శ్రీ వరసిద్ధి వినాయక భక్త బృందం
-                </p>
-                <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 800, color: '#b45309', letterSpacing: '0.3em', marginTop: '4px', textTransform: 'uppercase' }}>
-                  — Sparkling Youth — {displayYear} —
-                </p>
-                <p style={{ fontSize: '12px', fontWeight: 600, color: '#92400e', marginTop: '3px' }}>
-                  న్యూ కృష్ణ నగర్, కర్నూలు
-                </p>
+              {/* ── FULL-PAGE WATERMARK ── */}
+              <div
+                className="pointer-events-none select-none absolute inset-0 flex items-center justify-center z-0 overflow-hidden"
+              >
+                <img
+                  src={logoSrc}
+                  alt=""
+                  className="w-1/2 sm:w-[480px] object-cover opacity-[0.35]"
+                  style={{ aspectRatio: '1/1', borderRadius: '50%' }}
+                />
               </div>
 
-              {/* Right Logo */}
-              <img
-                src={logoSrc} alt="Vinayaka"
-                className="w-10 h-10 sm:w-[90px] sm:h-[90px]"
-                style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
-              />
-            </div>
+              {/* ── INNER CONTENT (above watermark) ── */}
+              <div className="relative z-10 flex flex-col h-full" style={{ minHeight: '1123px' }}>
 
-            {/* ════ RECEIPT TYPE BANNER ════ */}
-            <div style={{
-              background: isAck
-                ? 'linear-gradient(90deg, #ea580c, #f97316)'
-                : 'linear-gradient(90deg, #059669, #0d9488)',
-              padding: '12px 40px',
-              textAlign: 'center',
-            }}>
-              <p className="text-[12px] sm:text-[15px]" style={{ color: '#fff', fontWeight: 900, letterSpacing: '0.25em', textTransform: 'uppercase' }}>
-                {isAck ? '⚠  Acknowledgement Receipt  ⚠' : '✅  Payment Receipt'}
-              </p>
-              {isAck && (
-                <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '11px', fontWeight: 700, marginTop: '3px', letterSpacing: '0.1em' }}>
-                  STATUS: UNPAID • PAYMENT PENDING
-                </p>
-              )}
-              {!isAck && pendingAmt > 0 && (
-                <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '11px', fontWeight: 700, marginTop: '3px', letterSpacing: '0.1em' }}>
-                  PARTIAL PAYMENT • BALANCE PENDING: {fmt(pendingAmt)}
-                </p>
-              )}
-            </div>
+                {/* ════ HEADER ════ */}
+                <div
+                  className="flex items-center justify-between px-2 sm:px-10 py-4 sm:py-6 gap-2 sm:gap-0 border-b-4 border-amber-400"
+                  style={{ background: 'linear-gradient(135deg, rgba(255,247,237,0.85) 0%, rgba(254,243,199,0.85) 50%, rgba(255,247,237,0.85) 100%)' }}
+                >
+                  {/* Left Logo */}
+                  <img
+                    src={logoSrc} alt="Logo"
+                    className="w-10 h-10 sm:w-[90px] sm:h-[90px]"
+                    style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+                  />
 
-            {/* ════ BODY ════ */}
-            <div className="px-3 py-4 sm:px-[40px] sm:py-[28px] gap-3 sm:gap-[20px]" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-
-              {/* 🔹 Row 1: Receipt No, Date, Time, Role */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-[16px]">
-                {[
-                  { label: 'Receipt No', value: receiptNo },
-                  { label: 'Date',       value: dateLabel },
-                  { label: 'Time',       value: timeLabel },
-                  { label: 'Phone',      value: isBlank ? '__________' : (data?.phone || '—') },
-                ].map((item, idx) => (
-                  <div key={idx} className="px-2 py-2 sm:px-[16px] sm:py-[12px]" style={{
-                    background: 'rgba(255,247,237,0.7)',
-                    border: '1px solid #fde68a',
-                    borderRadius: '8px',
-                    textAlign: 'center',
-                  }}>
-                    <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {item.label}
+                  {/* Center Text */}
+                  <div className="px-1 sm:px-6" style={{ textAlign: 'center', flex: 1 }}>
+                    <p className="text-[14px] sm:text-[22px]" style={{ fontWeight: 900, color: '#7c2d12', lineHeight: 1.3, letterSpacing: '0.02em' }}>
+                      శ్రీ వరసిద్ధి వినాయక భక్త బృందం
                     </p>
-                    <p className="text-[11px] sm:text-[14px] break-words overflow-wrap-anywhere" style={{ fontWeight: 900, color: '#7c2d12', marginTop: '4px' }}>
-                      {item.value}
+                    <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 800, color: '#b45309', letterSpacing: '0.3em', marginTop: '4px', textTransform: 'uppercase' }}>
+                      — Sparkling Youth — {displayYear} —
+                    </p>
+                    <p style={{ fontSize: '12px', fontWeight: 600, color: '#92400e', marginTop: '3px' }}>
+                      న్యూ కృష్ణ నగర్, కర్నూలు
                     </p>
                   </div>
-                ))}
-              </div>
 
-              {/* ── Devotee Name ── */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(255,247,237,0.4), rgba(254,243,199,0.4))',
-                border: '2px solid rgba(245, 158, 11, 0.5)',
-                borderRadius: '12px',
-                padding: '16px 20px',
-              }}>
-                <p style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '8px' }}>
-                  Devotee Name
-                </p>
-                <p className="text-[18px] sm:text-[26px]" style={{ fontWeight: 900, color: '#7c2d12', lineHeight: 1.2, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                  {isBlank ? '________________________________' : (data?.name || '—')}
-                </p>
-              </div>
-
-              {/* 🔹 Payment Details Table */}
-              <div className="px-3 py-3 sm:px-[20px] sm:py-[24px]" style={{
-                background: 'rgba(255, 255, 255, 0.75)',
-                border: '2px solid #fcd34d',
-                borderRadius: '12px',
-              }}>
-                <p style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '12px' }}>
-                  Payment Details
-                </p>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <tbody>
-                    {[
-                      { label: 'Total Amount',  value: fmt(totalAmt), color: '#450a0a' },
-                      { label: 'Paid Amount',   value: fmt(paidAmt),  color: paidAmt > 0 ? '#065f46' : '#450a0a' },
-                      { label: 'Pending Amount',value: pendingAmt > 0 ? fmt(pendingAmt) : '₹0 — Cleared',
-                                                 color: pendingAmt > 0 ? '#991b1b' : '#065f46' },
-                      { label: 'Payment Mode',  value: data?.paymentMode || (isBlank ? '________' : 'Cash'), color: '#450a0a' },
-                    ].map((row, i, arr) => (
-                      <tr key={row.label} style={{ borderBottom: i < arr.length - 1 ? '1px solid #fde68a' : 'none' }}>
-                        <td className="py-[6px] sm:py-[11px] text-[10px] sm:text-[13px] break-words pr-2" style={{ fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          {row.label}
-                        </td>
-                        <td className="py-[6px] sm:py-[11px] text-[12px] sm:text-[16px] break-words" style={{ fontWeight: 900, color: row.color, textAlign: 'right' }}>
-                          {row.value}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* ── Donation Item (conditional) ── */}
-              {data?.donationItem && (
-                <div style={{
-                  background: 'rgba(255,247,237,0.65)',
-                  border: '1px solid #fdba74',
-                  borderRadius: '10px',
-                  padding: '14px 20px',
-                }}>
-                  <p style={{ fontSize: '9px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '5px' }}>
-                    Offering / Donation Item
-                  </p>
-                  <p className="text-[13px] sm:text-[15px] break-words" style={{ fontWeight: 800, color: '#450a0a' }}>{data.donationItem}</p>
+                  {/* Right Logo */}
+                  <img
+                    src={logoSrc} alt="Vinayaka"
+                    className="w-10 h-10 sm:w-[90px] sm:h-[90px]"
+                    style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+                  />
                 </div>
-              )}
 
-              {/* ── VIP Section (conditional) ── */}
-              {isVip && (
+                {/* ════ RECEIPT TYPE BANNER ════ */}
                 <div style={{
-                  background: 'rgba(254,252,232,0.7)',
-                  border: '2px solid #eab308',
-                  borderRadius: '12px',
-                  padding: '16px 20px',
+                  background: isAck
+                    ? 'linear-gradient(90deg, #ea580c, #f97316)'
+                    : 'linear-gradient(90deg, #059669, #0d9488)',
+                  padding: '12px 40px',
                   textAlign: 'center',
                 }}>
-                  <p style={{ fontSize: '10px', fontWeight: 900, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.35em', marginBottom: '8px' }}>
-                    ⭐  VIP Gotram Entry  ⭐
+                  <p className="text-[12px] sm:text-[15px]" style={{ color: '#fff', fontWeight: 900, letterSpacing: '0.25em', textTransform: 'uppercase' }}>
+                    {isAck ? '⚠  Acknowledgement Receipt  ⚠' : '✅  Payment Receipt'}
                   </p>
-                  <p className="text-[18px] sm:text-[22px] break-words" style={{ fontWeight: 900, color: '#7c2d12' }}>
-                    {data?.gotram || 'Special Entry'}
-                  </p>
-                  {members.length > 0 && (
-                    <p className="text-[11px] sm:text-[13px] break-words" style={{ fontWeight: 600, color: '#57534e', marginTop: '8px', lineHeight: 1.8 }}>
-                      {members.join('  •  ')}
+                  {isAck && (
+                    <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '11px', fontWeight: 700, marginTop: '3px', letterSpacing: '0.1em' }}>
+                      STATUS: UNPAID • PAYMENT PENDING
+                    </p>
+                  )}
+                  {!isAck && pendingAmt > 0 && (
+                    <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '11px', fontWeight: 700, marginTop: '3px', letterSpacing: '0.1em' }}>
+                      PARTIAL PAYMENT • BALANCE PENDING: {fmt(pendingAmt)}
                     </p>
                   )}
                 </div>
-              )}
 
-              {/* ── Footer: Collected By + QR ── */}
-              <div className="px-4 py-4 sm:px-[20px] sm:py-[18px] flex-col sm:flex-row gap-4 sm:gap-[20px]" style={{
-                background: 'rgba(255,251,235,0.65)',
-                border: '1px solid #fcd34d',
-                borderRadius: '12px',
-                display: 'flex',
-                alignItems: 'flex-end',
-                justifyContent: 'space-between',
-                marginTop: 'auto',
-              }}>
-                {/* Left: Collected By / Paid To */}
-                <div style={{ flex: 1 }}>
-                  <p className="text-[8px] sm:text-[9px]" style={{ fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '6px' }}>
-                    Paid To
-                  </p>
-                  <p className="text-sm sm:text-[17px] break-words" style={{ fontWeight: 900, color: '#450a0a', marginBottom: '2px' }}>
-                    {isBlank ? '________________________' : (data?.paidToName || data?.volunteerName || defaultCollector)}
-                  </p>
-                  <p className="text-[9px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', marginBottom: '16px' }}>
-                    {isBlank ? 'Mobile: ____________' : ((data?.volunteerPhone || defaultCollectorPhone) ? `Mobile: ${data?.volunteerPhone || defaultCollectorPhone}` : '')}
-                  </p>
+                {/* ════ BODY ════ */}
+                <div className="px-3 py-4 sm:px-[40px] sm:py-[28px] gap-3 sm:gap-[20px]" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
 
-                  {/* UPI badge */}
-                  {showPaymentQR && (
-                    <div className="px-2 py-1 sm:px-[12px] sm:py-[6px] mb-3 sm:mb-[14px]" style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      background: '#fff7ed', border: '1px solid #fdba74',
-                      borderRadius: '8px',
-                    }}>
-                      <span className="text-[8px] sm:text-[10px]" style={{ fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        💳 Payment Pending — UPI Available
-                      </span>
-                    </div>
-                  )}
-                  
-                  {/* Payment Proof Badge for UPI */}
-                  {data?.paymentProofStatus && payMode === 'UPI' && (
-                    <div className="px-2 py-1 sm:px-[12px] sm:py-[6px] mb-3 sm:mb-[14px]" style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      background: '#ecfdf5', border: '1px solid #6ee7b7',
-                      borderRadius: '8px',
-                    }}>
-                      <span className="text-[8px] sm:text-[10px]" style={{ fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        ✓ Payment Proof: Submitted
-                      </span>
-                    </div>
-                  )}
+                  {/* 🔹 Row 1: Receipt No, Date, Time, Role */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-[16px]">
+                    {[
+                      { label: 'Receipt No', value: receiptNo },
+                      { label: 'Date', value: dateLabel },
+                      { label: 'Time', value: timeLabel },
+                      { label: 'Phone', value: isBlank ? '__________' : (data?.phone || '—') },
+                    ].map((item, idx) => (
+                      <div key={idx} className="px-2 py-2 sm:px-[16px] sm:py-[12px]" style={{
+                        background: 'rgba(255,247,237,0.7)',
+                        border: '1px solid #fde68a',
+                        borderRadius: '8px',
+                        textAlign: 'center',
+                      }}>
+                        <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {item.label}
+                        </p>
+                        <p className="text-[11px] sm:text-[14px] break-words overflow-wrap-anywhere" style={{ fontWeight: 900, color: '#7c2d12', marginTop: '4px' }}>
+                          {item.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
 
-                  {/* Signature */}
-                  <div>
-                    <div className="w-[80px] sm:w-[120px]" style={{ height: '1px', background: '#f59e0b', marginTop: '32px' }} />
-                    <p className="text-[7px] sm:text-[9px]" style={{ color: '#b45309', fontWeight: 700, marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                      Authorised Signature
+                  {/* ── Devotee Name ── */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, rgba(255,247,237,0.4), rgba(254,243,199,0.4))',
+                    border: '2px solid rgba(245, 158, 11, 0.5)',
+                    borderRadius: '12px',
+                    padding: '16px 20px',
+                  }}>
+                    <p style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '8px' }}>
+                      Devotee Name
+                    </p>
+                    <p className="text-[18px] sm:text-[26px]" style={{ fontWeight: 900, color: '#7c2d12', lineHeight: 1.2, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                      {isBlank ? '________________________________' : (data?.name || '—')}
                     </p>
                   </div>
-                </div>
 
-                {/* Right: QR Code */}
-                {showQR && (
-                  <div className="w-full sm:w-auto flex flex-col items-center gap-2 sm:gap-[10px]">
-                    <div className="p-2 sm:p-[12px]" style={{
-                      background: '#fff',
-                      border: '3px solid #f59e0b',
-                      borderRadius: '16px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                  {/* 🔹 Payment Details Table */}
+                  <div className="px-3 py-3 sm:px-[20px] sm:py-[24px]" style={{
+                    background: 'rgba(255, 255, 255, 0.75)',
+                    border: '2px solid #fcd34d',
+                    borderRadius: '12px',
+                  }}>
+                    <p style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '12px' }}>
+                      Payment Details
+                    </p>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <tbody>
+                        {[
+                          { label: 'Total Amount', value: fmt(totalAmt), color: '#450a0a' },
+                          { label: 'Paid Amount', value: fmt(paidAmt), color: paidAmt > 0 ? '#065f46' : '#450a0a' },
+                          {
+                            label: 'Pending Amount', value: pendingAmt > 0 ? fmt(pendingAmt) : '₹0 — Cleared',
+                            color: pendingAmt > 0 ? '#991b1b' : '#065f46'
+                          },
+                          { label: 'Payment Mode', value: data?.paymentMode || (isBlank ? '________' : 'Cash'), color: '#450a0a' },
+                        ].map((row, i, arr) => (
+                          <tr key={row.label} style={{ borderBottom: i < arr.length - 1 ? '1px solid #fde68a' : 'none' }}>
+                            <td className="py-[6px] sm:py-[11px] text-[10px] sm:text-[13px] break-words pr-2" style={{ fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              {row.label}
+                            </td>
+                            <td className="py-[6px] sm:py-[11px] text-[12px] sm:text-[16px] break-words" style={{ fontWeight: 900, color: row.color, textAlign: 'right' }}>
+                              {row.value}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* ── Donation Item (conditional) ── */}
+                  {data?.donationItem && (
+                    <div style={{
+                      background: 'rgba(255,247,237,0.65)',
+                      border: '1px solid #fdba74',
+                      borderRadius: '10px',
+                      padding: '14px 20px',
                     }}>
-                      <QRCodeSVG
-                        value={showPaymentQR ? upiQrValue : verifyQrValue}
-                        size={100} // using responsive size handled by wrapper css if needed, but 100px is safe for mobile
-                        className="w-[80px] h-[80px] sm:w-[120px] sm:h-[120px]"
-                        marginSize={2}
-                        bgColor="#ffffff"
-                        fgColor={showPaymentQR ? '#000000' : '#450a0a'}
-                        level="H" // High resolution/error correction
-                      />
+                      <p style={{ fontSize: '9px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '5px' }}>
+                        Offering / Donation Item
+                      </p>
+                      <p className="text-[13px] sm:text-[15px] break-words" style={{ fontWeight: 800, color: '#450a0a' }}>{data.donationItem}</p>
                     </div>
-                    <p className="text-[8px] sm:text-[10px]" style={{
-                      fontWeight: 900,
+                  )}
+
+                  {/* ── VIP Section (conditional) ── */}
+                  {isVip && (
+                    <div style={{
+                      background: 'rgba(254,252,232,0.7)',
+                      border: '2px solid #eab308',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
                       textAlign: 'center',
-                      maxWidth: '140px',
-                      lineHeight: 1.4,
-                      color: showPaymentQR ? '#059669' : '#92400e',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
                     }}>
-                      {showPaymentQR ? 'Scan & Pay Remaining Amount' : 'Scan to verify receipt'}
-                    </p>
+                      <p style={{ fontSize: '10px', fontWeight: 900, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.35em', marginBottom: '8px' }}>
+                        ⭐  VIP Gotram Entry  ⭐
+                      </p>
+                      <p className="text-[18px] sm:text-[22px] break-words" style={{ fontWeight: 900, color: '#7c2d12' }}>
+                        {data?.gotram || 'Special Entry'}
+                      </p>
+                      {members.length > 0 && (
+                        <p className="text-[11px] sm:text-[13px] break-words" style={{ fontWeight: 600, color: '#57534e', marginTop: '8px', lineHeight: 1.8 }}>
+                          {members.join('  •  ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Footer: Collected By + QR ── */}
+                  <div className="px-4 py-4 sm:px-[20px] sm:py-[18px] flex-col sm:flex-row gap-4 sm:gap-[20px]" style={{
+                    background: 'rgba(255,251,235,0.65)',
+                    border: '1px solid #fcd34d',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    justifyContent: 'space-between',
+                    marginTop: 'auto',
+                  }}>
+                    {/* Left: Collected By / Paid To */}
+                    <div style={{ flex: 1 }}>
+                      <p className="text-[8px] sm:text-[9px]" style={{ fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '6px' }}>
+                        Paid To
+                      </p>
+                      <p className="text-sm sm:text-[17px] break-words" style={{ fontWeight: 900, color: '#450a0a', marginBottom: '2px' }}>
+                        {isBlank ? '________________________' : (data?.paidToName || data?.volunteerName || defaultCollector)}
+                      </p>
+                      <p className="text-[9px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', marginBottom: '16px' }}>
+                        {isBlank ? 'Mobile: ____________' : ((data?.volunteerPhone || defaultCollectorPhone) ? `Mobile: ${data?.volunteerPhone || defaultCollectorPhone}` : '')}
+                      </p>
+
+                      {/* UPI badge */}
+                      {showPaymentQR && (
+                        <div className="px-2 py-1 sm:px-[12px] sm:py-[6px] mb-3 sm:mb-[14px]" style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '6px',
+                          background: '#fff7ed', border: '1px solid #fdba74',
+                          borderRadius: '8px',
+                        }}>
+                          <span className="text-[8px] sm:text-[10px]" style={{ fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            💳 Payment Pending — UPI Available
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Payment Proof Badge for UPI */}
+                      {data?.paymentProofStatus && payMode === 'UPI' && (
+                        <div className="px-2 py-1 sm:px-[12px] sm:py-[6px] mb-3 sm:mb-[14px]" style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '6px',
+                          background: '#ecfdf5', border: '1px solid #6ee7b7',
+                          borderRadius: '8px',
+                        }}>
+                          <span className="text-[8px] sm:text-[10px]" style={{ fontWeight: 800, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            ✓ Payment Proof: Submitted
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Signature */}
+                      <div>
+                        <div className="w-[80px] sm:w-[120px]" style={{ height: '1px', background: '#f59e0b', marginTop: '32px' }} />
+                        <p className="text-[7px] sm:text-[9px]" style={{ color: '#b45309', fontWeight: 700, marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                          Authorised Signature
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Right: QR Code */}
+                    {showQR && (
+                      <div className="w-full sm:w-auto flex flex-col items-center gap-2 sm:gap-[10px]">
+                        <div className="p-2 sm:p-[12px]" style={{
+                          background: '#fff',
+                          border: '3px solid #f59e0b',
+                          borderRadius: '16px',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                        }}>
+                          <QRCodeSVG
+                            value={showPaymentQR ? upiQrValue : verifyQrValue}
+                            size={100} // using responsive size handled by wrapper css if needed, but 100px is safe for mobile
+                            className="w-[80px] h-[80px] sm:w-[120px] sm:h-[120px]"
+                            marginSize={2}
+                            bgColor="#ffffff"
+                            fgColor={showPaymentQR ? '#000000' : '#450a0a'}
+                            level="H" // High resolution/error correction
+                          />
+                        </div>
+                        <p className="text-[8px] sm:text-[10px]" style={{
+                          fontWeight: 900,
+                          textAlign: 'center',
+                          maxWidth: '140px',
+                          lineHeight: 1.4,
+                          color: showPaymentQR ? '#059669' : '#92400e',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.06em',
+                        }}>
+                          {showPaymentQR ? 'Scan & Pay Remaining Amount' : 'Scan to verify receipt'}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+
+                {/* ════ BOTTOM FOOTER ════ */}
+                <div className="px-3 py-3 sm:px-[40px] sm:py-[16px]" style={{
+                  background: 'linear-gradient(135deg, rgba(255,247,237,0.8), rgba(254,243,199,0.8))',
+                  borderTop: '3px solid #f59e0b',
+                  textAlign: 'center',
+                }}>
+                  <p className="text-sm sm:text-[20px]" style={{ fontWeight: 900, color: '#7c2d12', letterSpacing: '0.03em' }}>
+                    🙏 ధన్యవాదాలు 🙏
+                  </p>
+                  <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 700, color: '#b45309', marginTop: '4px', letterSpacing: '0.08em' }}>
+                    ✨ శ్రీ వరసిద్ధి వినాయక భక్త బృందం తరపున ✨
+                  </p>
+                </div>
               </div>
             </div>
-
-            {/* ════ BOTTOM FOOTER ════ */}
-            <div className="px-3 py-3 sm:px-[40px] sm:py-[16px]" style={{
-              background: 'linear-gradient(135deg, rgba(255,247,237,0.8), rgba(254,243,199,0.8))',
-              borderTop: '3px solid #f59e0b',
-              textAlign: 'center',
-            }}>
-              <p className="text-sm sm:text-[20px]" style={{ fontWeight: 900, color: '#7c2d12', letterSpacing: '0.03em' }}>
-                🙏 ధన్యవాదాలు 🙏
-              </p>
-              <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 700, color: '#b45309', marginTop: '4px', letterSpacing: '0.08em' }}>
-                ✨ శ్రీ వరసిద్ధి వినాయక భక్త బృందం తరపున ✨
-              </p>
-            </div>
           </div>
-        </div>
-        </div>
         </div>
       </div>
     );

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-hot-toast';
-import { ChevronLeft, Save, HeartHandshake, Banknote, QrCode, UploadCloud, FileCheck, Trash2, Smartphone } from 'lucide-react';
+import { ChevronLeft, Save, HeartHandshake, Banknote, QrCode, UploadCloud, FileCheck, Trash2, Smartphone, Download, Printer } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { usePortalStore } from '../../store/portalStore';
 import { MaskedPhoneInput } from '../../components/MaskedPhoneInput';
 import { QRCodeSVG } from 'qrcode.react';
+import { Receipt } from '../../components/Receipt';
 
 export function QRChanda() {
     const { settings } = usePortalStore();
@@ -104,20 +105,60 @@ export function QRChanda() {
     };
 
     if (success) {
+        const u = committeeUsers.find(x => x.id === paidToUserId);
+
         return (
-            <div className="max-w-4xl mx-auto p-6 bg-white rounded-2xl shadow-sm text-center border border-gray-100">
-                <div className="animate-in fade-in slide-in-from-top-2">
-                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+            <div className="max-w-4xl mx-auto p-4 sm:p-6 bg-white rounded-2xl shadow-sm border border-gray-100 mb-10">
+                <div className="animate-in fade-in slide-in-from-top-2 text-center mb-8">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Successful</h2>
-                    <p className="text-gray-600 mb-6 font-medium">
-                        Your entry has been securely registered into the system.
+                    <p className="text-gray-600 font-medium">
+                        Your entry has been securely registered into the database.
                     </p>
-                    <div className="bg-orange-50 p-4 rounded-xl mb-6 max-w-sm mx-auto border border-orange-100">
-                        <p className="text-sm font-bold text-orange-800 tracking-wide uppercase mb-1">Official Receipt Number</p>
-                        <p className="text-3xl font-black text-orange-600 mt-1">{receiptNo}</p>
-                    </div>
+                </div>
+
+                <Receipt
+                    data={{
+                        receiptNo,
+                        name: formData.name,
+                        phone: formData.phone,
+                        totalAmount: Number(formData.total_amount) || 0,
+                        paidAmount: Number(formData.paid_amount) || 0,
+                        pendingAmount: (Number(formData.total_amount) || 0) - (Number(formData.paid_amount) || 0),
+                        donationItem: formData.donation_item,
+                        paymentMode: formData.payment_mode || 'Cash',
+                        gotram: formData.gotram,
+                        volunteerName: u?.name || 'Portal',
+                        volunteerPhone: u?.phone || '',
+                        createdAt: Date.now(),
+                        paidToName: u?.name || 'Portal'
+                    }}
+                    isBlank={false}
+                    hideActions={false}
+                    isPortal={false}
+                    renderTrigger={({ downloadPDF, loading: pdfLoading }) => (
+                        <div className="flex flex-col items-center gap-4 max-w-sm mx-auto">
+                            <button
+                                onClick={downloadPDF}
+                                disabled={pdfLoading}
+                                className="flex items-center justify-center gap-2 w-full py-4 bg-orange-600 text-white font-black rounded-xl hover:bg-orange-700 transition-colors shadow-md disabled:bg-orange-400"
+                            >
+                                {pdfLoading ? (
+                                    <div className="flex items-center gap-2">
+                                        <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
+                                        <span>Generating PDF...</span>
+                                    </div>
+                                ) : (
+                                    <> <Download size={20} /> Download Receipt PDF </>
+                                )}
+                            </button>
+                        </div>
+                    )}
+                />
+
+                <div className="mt-10 flex flex-col sm:flex-row justify-center gap-4 max-w-lg mx-auto">
                     <button onClick={() => {
                         setSuccess(false);
                         setReceiptNo('');
@@ -126,14 +167,14 @@ export function QRChanda() {
                             payment_mode: '', donation_item: '', gotram: ''
                         });
                         setPaidToUserId('');
-                    }} className="block max-w-sm mx-auto w-full py-4 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-colors">
+                    }} className="flex-1 py-4 bg-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition-colors shadow-sm">
                         Register Another
                     </button>
-                    <Link to="/portal" className="block max-w-sm mx-auto w-full py-4 mt-3 bg-gray-100 text-gray-800 font-bold rounded-xl hover:bg-gray-200 transition-colors">
+                    <Link to="/portal" className="flex-1 py-4 bg-gray-100 text-gray-800 font-bold rounded-xl hover:bg-gray-200 transition-colors shadow-sm flex items-center justify-center">
                         Return to Portal
                     </Link>
                 </div>
-            </div>
+            </div >
         );
     }
 
@@ -317,7 +358,8 @@ export function QRChanda() {
                                                 {committeeUsers.filter(u => u.name.toLowerCase().includes(paidToSearch.toLowerCase()) || (u.phone && u.phone.includes(paidToSearch))).map(u => (
                                                     <div
                                                         key={u.id}
-                                                        onClick={() => {
+                                                        onMouseDown={(e) => {
+                                                            e.preventDefault(); // Prevent input from losing focus immediately
                                                             setPaidToUserId(u.id);
                                                             setIsDropdownOpen(false);
                                                             setPaidToSearch('');

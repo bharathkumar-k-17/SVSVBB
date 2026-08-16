@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, HeartHandshake, Music, Receipt,
   Crown, BookOpen, Settings as SettingsIcon, LogOut, Menu, X,
   Wallet, User, KeyRound, ChevronDown, CreditCard, ShieldAlert,
-  CalendarDays, Bell, CheckCheck, MessageSquareHeart
+  CalendarDays, Bell, CheckCheck, MessageSquareHeart, TrendingUp
 } from 'lucide-react';
 import { InstallPrompt } from './InstallPrompt';
 import { AppLockSetupPopup } from './AppLockSetupPopup';
@@ -25,6 +25,7 @@ const BASE_NAV_ITEMS = [
   { path: '/vip-gotram', label: 'VIP Gotram List', icon: Crown },
   { path: '/pooja-booking', label: 'Pooja Booking', icon: CalendarDays },
   { path: '/records', label: 'Records', icon: BookOpen },
+  { path: '/daily-records', label: 'Daily Records', icon: TrendingUp },
 ];
 
 export function Layout() {

@@ -152,7 +152,7 @@ export default {
                 const amountStr = new Intl.NumberFormat('en-IN').format(pAmt);
                 await ctx.supabaseAdmin.from('notifications').insert({
                     type: 'CHANDA ENTRY',
-                    message: `${volunteer_name || 'Volunteer'} added ₹${amountStr} from ${name}.`,
+                    message: `${volunteer_name || 'Volunteer'} added ₹${amountStr} from ${name}.\nReceipt: ${receiptNo}`,
                     amount: pAmt > 0 ? pAmt : 0,
                     created_at: now,
                     created_by: volunteer_id || 'admin',
