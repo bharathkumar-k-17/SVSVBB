@@ -17,11 +17,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { shareReceiptWhatsApp } from '../lib/whatsapp';
 
-interface ChandaEntryProps {
-  isPortal?: boolean;
-}
-
-export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
+export function ChandaEntry() {
   const { currentYear } = useAppStore();
   const { appUser } = useAuthStore();
   const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
@@ -125,16 +121,13 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isPortal && !appUser) return;
+    if (!appUser) return;
     let rawPhone = normalizePhoneDigits(formData.phone);
     if (rawPhone.length === 12 && rawPhone.startsWith('91')) {
       rawPhone = rawPhone.slice(2);
     }
 
-    if (isPortal && (!rawPhone || rawPhone.length !== 10)) {
-      alert('A valid 10-digit Mobile Number is required.');
-      return;
-    } else if (!isPortal && rawPhone && rawPhone.length !== 10) {
+    if (rawPhone && rawPhone.length !== 10) {
       alert('Enter a valid 10-digit phone number or leave it blank.');
       return;
     }
@@ -154,11 +147,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
         setLoading(false);
         return;
       }
-      if (formData.paymentMode === 'UPI' && !paymentProofFile && !paymentProofPath) {
-        alert('Please upload your UPI payment proof before registering.');
-        setLoading(false);
-        return;
-      }
+
 
       const paidToUserObj = usersData?.find(u => u.id === paidToUserId);
       let finalProofPath = paymentProofPath;
@@ -170,7 +159,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
         setIsUploadingProof(true);
         const fileExt = paymentProofFile.name.split('.').pop();
         const fileName = `proof-${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-        const filePath = `${rawPhone}/${fileName}`;
+        const filePath = `${currentYear}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from('payment-proofs')
@@ -209,10 +198,10 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
           family_members: isVip ? formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean) : [],
           year: currentYear,
           created_at: createdTime,
-          isPortal: isPortal && formData.paymentMode === 'UPI',
-          volunteer_id: isPortal ? 'portal' : (appUser?.email || 'admin'),
-          volunteer_name: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
-          volunteer_phone: isPortal ? rawPhone : (appUser?.phone || ''),
+          isPortal: false,
+          volunteer_id: appUser?.email || 'admin',
+          volunteer_name: appUser?.name || 'Admin',
+          volunteer_phone: appUser?.phone || '',
 
           // New Enterprise Fields
           paid_to_user_id: paidToUserId,
@@ -246,9 +235,9 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
         gotram: isVip ? formData.gotram : '',
         familyMembers: isVip ? formData.familyMembersStr.split(',').map(s => s.trim()).filter(Boolean) : [],
         year: currentYear,
-        volunteerId: isPortal ? 'portal' : (appUser?.email || 'admin'),
-        volunteerName: isPortal ? 'Self (Portal)' : (appUser?.name || 'Admin'),
-        volunteerPhone: isPortal ? formData.phone : (appUser?.phone || ''),
+        volunteerId: appUser?.email || 'admin',
+        volunteerName: appUser?.name || 'Admin',
+        volunteerPhone: appUser?.phone || '',
         createdAt: createdTime,
         receiptNo: receiptNo,
         paidToUserId: paidToUserId,
@@ -261,9 +250,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
       refetchDevotees();
 
       // Auto-generate and download PDF only in portal mode and if receipt exists
-      if (isPortal && receiptNo) {
-        setTimeout(() => generatePDF(receiptNo), 500);
-      }
+
 
       setFormData({
         name: '',
@@ -283,17 +270,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
 
     } catch (error: any) {
       console.error("Error adding devotee: ", error);
-      let errMsg = error.message || 'Unknown backend error';
-      if (error && error.context && typeof error.context.json === 'function') {
-        try {
-          const body = await error.context.json();
-          if (body && body.message) errMsg = body.message;
-          else if (body && body.error) errMsg = body.error;
-        } catch (e) {
-          // parse failed, use default
-        }
-      }
-      alert(`Unable to save the Chanda entry. Please try again. (Error: ${errMsg})`);
+      alert(`Unable to save the Chanda entry. Please try again. (Error: ${error.message || 'Unknown backend error'})`);
     } finally {
       setLoading(false);
     }
@@ -355,63 +332,24 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
 
         {success && lastSavedDevotee && (
           <div className="mb-6 animate-in fade-in slide-in-from-top-2">
-            {isPortal && lastSavedDevotee.paymentMode === 'UPI' ? (
-              <div className="p-8 bg-blue-50 text-blue-900 rounded-3xl flex flex-col gap-4 items-center border border-blue-200 shadow-md text-center">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-2">
-                  <span className="text-3xl">⏳</span>
-                </div>
-                <h3 className="font-black text-2xl tracking-tight">Pending Review</h3>
-                <p className="text-blue-800 font-medium">మీ చందా నమోదు విజయవంతంగా పూర్తయింది. చెల్లింపు రుజువు కమిటీ పరిశీలనలో ఉంది.</p>
-                <div className="w-full bg-white/50 p-4 rounded-xl mt-4 text-left shadow-sm">
-                  <div className="flex justify-between mb-2"><span className="text-blue-700">Payment Status:</span> <span className="font-black text-blue-800">PENDING REVIEW</span></div>
-                  <div className="flex justify-between mb-2"><span className="text-blue-700">Payment Mode:</span> <span className="font-bold text-gray-800">UPI</span></div>
-                  <div className="flex justify-between"><span className="text-blue-700">Pending Amount:</span> <span className="font-bold text-gray-800">₹0</span></div>
-                </div>
+            <>
+              <div className="p-4 bg-green-50 text-green-800 rounded-lg flex flex-col gap-3 items-center border border-green-200 shadow-sm mb-6">
+                <span className="font-bold flex items-center gap-2 text-lg">✅ Chanda Entry Saved Successfully!</span>
+                <p className="text-sm">Please see the generated receipt below. You can print or share it using the buttons provided.</p>
               </div>
-            ) : isPortal && lastSavedDevotee.paymentMode === 'Cash' ? (
-              <>
-                <div className="p-8 bg-green-50 text-green-900 rounded-3xl flex flex-col gap-4 items-center border border-green-200 shadow-md text-center mb-6">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-2 shadow-sm">
-                    <span className="text-3xl">🙏</span>
-                  </div>
-                  <h3 className="font-black text-2xl tracking-tight text-green-800">Registration Complete</h3>
-                  <p className="text-green-800 font-medium text-lg">చందా నమోదు విజయవంతంగా పూర్తయింది. 🙏</p>
-                  <div className="w-full bg-white/50 p-4 rounded-xl mt-4 text-left shadow-sm">
-                    <div className="flex justify-between mb-2"><span className="text-green-700">Payment Status:</span> <span className="font-black text-green-800">PAID</span></div>
-                    <div className="flex justify-between mb-2"><span className="text-green-700">Payment Mode:</span> <span className="font-bold text-gray-800">Cash</span></div>
-                    <div className="flex justify-between mb-2"><span className="text-green-700">Paid To:</span> <span className="font-bold text-gray-800">{lastSavedDevotee.paidToName}</span></div>
-                    <div className="flex justify-between"><span className="text-green-700">Pending Amount:</span> <span className="font-bold text-gray-800">₹0</span></div>
-                  </div>
-                </div>
-                <div className="w-full" id="receipt-container">
-                  <Receipt
-                    data={lastSavedDevotee}
-                    isBlank={false}
-                    hideActions={true}
-                    isPortal={true}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="p-4 bg-green-50 text-green-800 rounded-lg flex flex-col gap-3 items-center border border-green-200 shadow-sm mb-6">
-                  <span className="font-bold flex items-center gap-2 text-lg">✅ Chanda Entry Saved Successfully!</span>
-                  <p className="text-sm">Please see the generated receipt below. You can print or share it using the buttons provided.</p>
-                </div>
 
-                <div className="w-full" id="receipt-container">
-                  <Receipt
-                    data={lastSavedDevotee}
-                    isBlank={false}
-                    hideActions={!isPortal}
-                    isPortal={isPortal}
-                  />
-                </div>
-              </>
-            )}
+              <div className="w-full" id="receipt-container">
+                <Receipt
+                  data={lastSavedDevotee}
+                  isBlank={false}
+                  hideActions={false}
+                  isPortal={false}
+                />
+              </div>
+            </>
 
             {/* Custom Sharing Buttons for Private UI */}
-            {!isPortal && lastSavedDevotee.phone && (
+            {lastSavedDevotee.phone && (
               <div className="flex justify-center gap-4 mt-6">
                 <button
                   onClick={handleShareWhatsApp}
@@ -620,35 +558,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
 
                         return (
                           <>
-                            {isPortal && !upiPaymentInitiated ? (
-                              <div className="w-full animate-in fade-in slide-in-from-top-2">
-                                <p className="text-sm font-bold text-gray-700 mb-3">Select Payment App</p>
-                                <div className="grid grid-cols-4 gap-2 mb-4">
-                                  {[
-                                    { name: 'PhonePe', icon: '/payment/phonepe.svg' },
-                                    { name: 'Google Pay', icon: '/payment/gpay.svg' },
-                                    { name: 'Paytm', icon: '/payment/paytm.svg' },
-                                    { name: 'Other UPI', icon: '/payment/upi.svg' }
-                                  ].map(app => (
-                                    <button
-                                      key={app.name}
-                                      type="button"
-                                      onClick={() => handleAppSelect(app.name)}
-                                      className="flex items-center justify-center bg-white p-3 rounded-xl border border-gray-100 hover:border-orange-400 hover:shadow-md transition-all group aspect-square"
-                                    >
-                                      <div className="w-full h-full flex items-center justify-center transition-transform group-hover:scale-105">
-                                        <img src={app.icon} alt={`${app.name} Logo`} className="w-full h-full object-contain" />
-                                      </div>
-                                    </button>
-                                  ))}
-                                </div>
-                                <div className="relative flex py-2 items-center">
-                                  <div className="flex-grow border-t border-gray-200"></div>
-                                  <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-medium">OR Scan QR Code</span>
-                                  <div className="flex-grow border-t border-gray-200"></div>
-                                </div>
-                              </div>
-                            ) : null}
+
 
                             <div className="bg-white p-3 rounded-2xl shadow-sm border border-orange-100 mb-4 inline-block mt-2">
                               <QRCodeSVG value={upiUrl} size={150} level="M" />
@@ -812,7 +722,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
             {formData.paymentMode && (
               <button
                 type="submit"
-                disabled={loading || isUploadingProof || !formData.paymentMode || (formData.paymentMode === 'Cash' && !paidToUserId) || (formData.paymentMode === 'UPI' && !paymentProofFile && !paymentProofPath) || (isPortal && !hasPhone)}
+                disabled={loading || isUploadingProof || !formData.paymentMode || (formData.paymentMode === 'Cash' && !paidToUserId) || (formData.paymentMode === 'UPI' && !paymentProofFile && !paymentProofPath)}
                 className="w-full flex items-center justify-center gap-2 py-4 border border-transparent rounded-xl shadow-md text-white font-bold text-lg bg-gradient-to-r from-primary to-orange-500 hover:from-orange-600 hover:to-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading || isUploadingProof ? (
@@ -821,7 +731,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
                     <span>{isUploadingProof ? 'Uploading Proof...' : 'Saving...'}</span>
                   </div>
                 ) : (
-                  <> <Save size={24} /> {formData.paymentMode === 'UPI' ? 'Save & Register' : (isPortal ? 'Save & Register' : (hasPhone ? 'Save & Share' : 'Save'))} </>
+                  <> <Save size={24} /> {formData.paymentMode === 'UPI' ? 'Save & Register' : (hasPhone ? 'Save & Share' : 'Save')} </>
                 )}
               </button>
             )}
@@ -830,7 +740,7 @@ export function ChandaEntry({ isPortal = false }: ChandaEntryProps) {
       </div>
 
       {/* Current Day Collections */}
-      {!isPortal && (
+      {true && (
         <div className="mt-8 bg-white/50 backdrop-blur-xl rounded-2xl shadow-lg border border-white/60 overflow-hidden relative">
           <div className="px-6 py-4 border-b border-white/40 flex justify-between items-center bg-white/30 backdrop-blur-sm">
             <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">

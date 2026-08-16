@@ -15,6 +15,7 @@ import { DynamicBranding } from './components/DynamicBranding';
 const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const AllDevotees = lazy(() => import('./pages/AllDevotees').then(m => ({ default: m.AllDevotees })));
+const DevoteeEntry = lazy(() => import('./pages/DevoteeEntry').then(m => ({ default: m.DevoteeEntry })));
 const ChandaEntry = lazy(() => import('./pages/ChandaEntry').then(m => ({ default: m.ChandaEntry })));
 const CulturalActivities = lazy(() => import('./pages/CulturalActivities').then(m => ({ default: m.CulturalActivities })));
 const Expenses = lazy(() => import('./pages/Expenses').then(m => ({ default: m.Expenses })));
@@ -29,14 +30,13 @@ const QRPortalSettings = lazy(() => import('./pages/QRPortalSettings').then(m =>
 const FeedbackMessages = lazy(() => import('./pages/FeedbackMessages').then(m => ({ default: m.FeedbackMessages })));
 const Notifications = lazy(() => import('./pages/Notifications').then(m => ({ default: m.Notifications })));
 const ResetPassword = lazy(() => import('./pages/ResetPassword').then(m => ({ default: m.ResetPassword })));
-const QRChandaReviews = lazy(() => import('./pages/QRChandaReviews').then(m => ({ default: m.QRChandaReviews })));
 
 // Portal Pages
 const PortalHome = lazy(() => import('./pages/portal/PortalHome').then(m => ({ default: m.PortalHome })));
-const PortalChanda = lazy(() => import('./pages/portal/PortalChanda').then(m => ({ default: m.PortalChanda })));
 const PortalReceipt = lazy(() => import('./pages/portal/PortalReceipt').then(m => ({ default: m.PortalReceipt })));
 const PortalPooja = lazy(() => import('./pages/portal/PortalPooja').then(m => ({ default: m.PortalPooja })));
 const PortalFeedback = lazy(() => import('./pages/portal/PortalFeedback').then(m => ({ default: m.PortalFeedback })));
+const QRChanda = lazy(() => import('./pages/portal/QRChanda').then(m => ({ default: m.QRChanda })));
 
 export default function App() {
   const { setSession, fetchAppUser, setLoading } = useAuthStore();
@@ -90,11 +90,11 @@ export default function App() {
           {/* â”€â”€ Public QR Portal Routes â”€â”€ */}
           <Route path="/portal" element={<PortalLayout />}>
             <Route index element={<PortalHome />} />
-            <Route path="chanda" element={<PortalChanda />} />
             <Route path="receipt" element={<PortalReceipt />} />
             <Route path="receipt/:id" element={<PortalReceipt />} />
             <Route path="pooja" element={<PortalPooja />} />
             <Route path="feedback" element={<PortalFeedback />} />
+            <Route path="qr-chanda" element={<QRChanda />} />
           </Route>
 
           <Route element={<ProtectedRoute />}>
@@ -109,7 +109,7 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route path="/chanda" element={<ChandaEntry />} />
+              <Route path="/chanda" element={<DevoteeEntry />} />
               <Route path="/cultural" element={<CulturalActivities />} />
               <Route path="/expenses" element={<Expenses />} />
               <Route
@@ -184,14 +184,6 @@ export default function App() {
                 element={
                   <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                     <FeedbackMessages />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/qr-chanda-reviews"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
-                    <QRChandaReviews />
                   </ProtectedRoute>
                 }
               />

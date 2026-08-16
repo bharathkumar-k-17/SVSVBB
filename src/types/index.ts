@@ -262,3 +262,25 @@ export interface AppSettings {
   pooja_reminder_template?: string;
   festival_greeting_template?: string;
 }
+
+export interface PublicQrChandaRequest {
+  id: string;
+  name: string;
+  phone: string;
+  total_amount: number;
+  paid_amount: number;
+  pending_amount: number;
+  payment_mode?: PaymentMode;
+  status: 'PENDING_REVIEW' | 'ACCEPTED' | 'REJECTED';
+  donation_item?: string;
+  gotram?: string;
+  family_members?: string[];
+  payment_proof_path?: string;
+  payment_proof_name?: string;
+  payment_proof_type?: string;
+  rejection_reason?: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  created_at: string;
+  updated_at: string;
+}

@@ -9,12 +9,12 @@ export function PortalHome() {
 
   const services = [
     {
-      id: 'enable_chanda',
-      to: '/portal/chanda',
-      title: 'Chanda Registration',
-      desc: 'Register and donate via UPI or Cash',
+      id: 'enable_chanda', // assuming this maps to the setting in DB
+      to: '/portal/qr-chanda',
+      title: 'QR Chanda Registration',
+      desc: 'Submit Chanda payment via QR',
       icon: HeartHandshake,
-      color: 'from-orange-500 to-amber-500',
+      color: 'from-orange-500 to-red-500',
       iconBg: 'bg-orange-100',
       iconColor: 'text-orange-600'
     },
@@ -52,21 +52,21 @@ export function PortalHome() {
 
   return (
     <div className="space-y-6 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      
+
       {/* Banner & Welcome */}
       <div className="text-center space-y-4 pt-2">
         {settings.banner_image_url && (
-            <div className="w-full h-40 rounded-2xl overflow-hidden shadow-lg border-2 border-white mb-4">
-                <img src={settings.banner_image_url} alt="Banner" className="w-full h-full object-cover" />
-            </div>
+          <div className="w-full h-40 rounded-2xl overflow-hidden shadow-lg border-2 border-white mb-4">
+            <img src={settings.banner_image_url} alt="Banner" className="w-full h-full object-cover" />
+          </div>
         )}
         <h2 className="text-2xl font-black text-gray-800">
           {settings.portal_name}
         </h2>
         {settings.welcome_message && (
-            <p className="text-gray-600 font-medium leading-relaxed px-4">
-                {settings.welcome_message}
-            </p>
+          <p className="text-gray-600 font-medium leading-relaxed px-4">
+            {settings.welcome_message}
+          </p>
         )}
       </div>
 
@@ -76,7 +76,7 @@ export function PortalHome() {
       <div className="grid grid-cols-1 gap-4 mt-6">
         {services.map((svc) => {
           if (!settings[svc.id as keyof typeof settings]) return null;
-          
+
           return (
             <Link
               key={svc.to}
@@ -84,14 +84,14 @@ export function PortalHome() {
               className="group relative bg-white/70 backdrop-blur-md rounded-2xl p-4 border border-white shadow-sm hover:shadow-xl hover:bg-white transition-all duration-300 flex items-center gap-4 overflow-hidden"
             >
               <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${svc.color} opacity-5 rounded-bl-full group-hover:opacity-10 transition-opacity`} />
-              
+
               <div className={`flex-shrink-0 w-14 h-14 ${svc.iconBg} ${svc.iconColor} rounded-2xl flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform duration-300`}>
                 <svc.icon size={28} />
               </div>
-              
+
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-gray-800 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-gray-900 group-hover:to-gray-600 transition-colors">
-                    {svc.title}
+                  {svc.title}
                 </h3>
                 <p className="text-sm text-gray-500 mt-0.5">{svc.desc}</p>
               </div>

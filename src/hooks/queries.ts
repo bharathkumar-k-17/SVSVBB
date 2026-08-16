@@ -69,7 +69,7 @@ export const useDashboardStats = (year: number) => {
     queryFn: async () => {
       // For Superadmin/Admin, fetch total collected, pending, expenses.
       // Instead of relying on client-side reduce, we do a quick select of only the amounts.
-      
+
       const [
         { data: devoteesData, error: devError },
         { data: expensesData, error: expError },
@@ -79,7 +79,7 @@ export const useDashboardStats = (year: number) => {
         supabase.from('expenses').select('amount').eq('year', year),
         supabase.from('vip_gotrams').select('*', { count: 'exact', head: true }).eq('year', year)
       ]);
-      
+
       if (devError) throw devError;
       if (expError) throw expError;
       if (vipError) throw vipError;
@@ -174,7 +174,7 @@ export const useDevotees = (
 
       const { data, count, error } = await query;
       if (error) throw error;
-      
+
       // Map to camelCase
       const mapped = (data || []).map(row => ({
         id: row.id,
@@ -232,7 +232,7 @@ export const useExpenses = (
         .from('expenses')
         .select('amount')
         .eq('year', year);
-      
+
       if (isVolunteer && volunteerId) {
         totalQuery = totalQuery.eq('volunteer_id', volunteerId);
       }
@@ -247,7 +247,7 @@ export const useExpenses = (
 
       if (error) throw error;
       if (totalError) throw totalError;
-      
+
       const totalExpenses = (totalData || []).reduce((sum, exp) => sum + (exp.amount || 0), 0);
 
       const mapped = (data || []).map(row => ({
@@ -300,7 +300,7 @@ export const usePayments = (
 
       const { data, count, error } = await query;
       if (error) throw error;
-      
+
       const mapped = (data || []).map(row => ({
         id: row.id,
         name: row.name,
@@ -412,9 +412,9 @@ export const useVolunteerStats = (year: number) => {
         .from('devotees')
         .select('volunteer_id, volunteer_name, paid_amount, pending_amount, created_at')
         .eq('year', year);
-      
+
       if (error) throw error;
-      
+
       const today = new Date().toDateString();
       const stats = (data || []).reduce((acc: any, d: any) => {
         const vId = d.volunteer_id || 'admin';
@@ -429,24 +429,24 @@ export const useVolunteerStats = (year: number) => {
             pendingCollection: 0,
           };
         }
-        
+
         const isToday = new Date(d.created_at).toDateString() === today;
         acc[vId].totalCount += 1;
         acc[vId].totalCollection += d.paid_amount || 0;
-        
+
         if ((d.pending_amount || 0) > 0) {
           acc[vId].pendingCount += 1;
           acc[vId].pendingCollection += d.pending_amount;
         }
-        
+
         if (isToday) {
           acc[vId].todayCount += 1;
           acc[vId].todayCollection += d.paid_amount || 0;
         }
-        
+
         return acc;
       }, {});
-      
+
       return Object.values(stats) as Array<{
         name: string;
         todayCount: number;
@@ -476,7 +476,7 @@ export const useAllPoojaBookings = (year: number) => {
         .from('pooja_bookings')
         .select('*')
         .eq('year', year);
-      
+
       if (bookingError && bookingError.code !== 'PGRST116') throw bookingError;
 
       return (slots || []).map(slot => ({
@@ -549,15 +549,15 @@ export const useReportsData = (yearId: string | undefined, enabled: boolean) => 
     queryKey: ['reports', yearId],
     queryFn: async () => {
       if (!yearId) return { devotees: [], expenses: [] };
-      
+
       const [devoteesRes, expensesRes] = await Promise.all([
         supabase.from('devotees').select('id, name, phone, amount_pledged, paid_amount, payment_mode, volunteer_id, volunteer_name, gotram').eq('year_id', yearId),
         supabase.from('expenses').select('id, amount, category, date, payment_mode').eq('year_id', yearId)
       ]);
-      
+
       if (devoteesRes.error) throw devoteesRes.error;
       if (expensesRes.error) throw expensesRes.error;
-      
+
       return {
         devotees: devoteesRes.data || [],
         expenses: expensesRes.data || []
@@ -638,7 +638,7 @@ export const useRecordsData = (year: number) => {
       if (cultError) throw cultError;
       if (vipError) throw vipError;
       if (slotsError) throw slotsError;
-      
+
       const mappedDevotees = (devData || []).map(d => ({
         ...d,
         totalAmount: d.total_amount,
@@ -692,39 +692,4 @@ export const useRecordsData = (year: number) => {
   });
 };
 
-// --- QR Portal Chanda Reviews ---
 
-export const usePendingQRChandaRequests = () => {
-  return useQuery({
-    queryKey: ['pendingQRChandaRequests'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('public_chanda_requests')
-        .select('*')
-        .eq('status', 'PENDING_REVIEW')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data || [];
-    },
-    staleTime: 30 * 1000,
-    refetchOnWindowFocus: true,
-  });
-};
-
-export const useQRChandaHistory = () => {
-  return useQuery({
-    queryKey: ['qrChandaHistory'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('public_chanda_requests')
-        .select('*')
-        .in('status', ['ACCEPTED', 'REJECTED'])
-        .order('updated_at', { ascending: false })
-        .limit(100);
-      if (error) throw error;
-      return data || [];
-    },
-    staleTime: 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-};

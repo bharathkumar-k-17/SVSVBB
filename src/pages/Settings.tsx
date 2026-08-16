@@ -16,14 +16,14 @@ export function Settings() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: appSettings } = useAppSettings();
-  
+
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
-  
+
   // Profile State
   const [name, setName] = useState(appUser?.name || '');
   const [phone, setPhone] = useState(appUser?.phone || '');
-  
+
   // Password State
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -43,12 +43,12 @@ export function Settings() {
   const [lockOnLogout, setLockOnLogout] = useState(initialLockConfig.lockOnLogout ?? true);
   const [fingerprintAvailable, setFingerprintAvailable] = useState(false);
   const { syncLockStatus } = useAppLockStore();
-  
+
   // Asset State
   const [upiId, setUpiId] = useState('');
   const [upiMobile, setUpiMobile] = useState('');
   const [festivalStartDate, setFestivalStartDate] = useState('');
-  
+
   // Branding State
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
@@ -75,7 +75,6 @@ export function Settings() {
     spl_records: false,
     feedback: false,
     qr_portal_settings: false,
-    public_chanda_requests: false,
     notifications: false,
   });
 
@@ -143,9 +142,9 @@ export function Settings() {
   const handleToggleAppLock = async (enabled: boolean) => {
     if (!supabaseUser?.id) return;
     setLockEnabled(enabled);
-    
+
     const savedConfig = loadAppLockConfig(supabaseUser.id);
-    
+
     if (!enabled) {
       saveAppLockConfig(supabaseUser.id, { ...savedConfig, enabled: false, updatedAt: Date.now() });
       await syncLockStatus(supabaseUser.id, false);
@@ -185,18 +184,18 @@ export function Settings() {
 
       let webauthnCredentialId = savedConfig.webauthnCredentialId;
       if (lockMethod === 'fingerprint' && fingerprintAvailable) {
-         const credId = await registerBiometric(supabaseUser.id);
-         if (credId) {
-            webauthnCredentialId = credId;
-         } else {
-            toast.error('Failed to register device auth. Falling back to PIN.');
-            setLockMethod('pin');
-         }
+        const credId = await registerBiometric(supabaseUser.id);
+        if (credId) {
+          webauthnCredentialId = credId;
+        } else {
+          toast.error('Failed to register device auth. Falling back to PIN.');
+          setLockMethod('pin');
+        }
       }
 
       saveAppLockConfig(supabaseUser.id, {
         enabled: true, method: lockMethod, pinHash, inactivityMinutes, vibrate, sound, lockOnLogout,
-        fingerprintEnabled: lockMethod === 'fingerprint' && fingerprintAvailable, 
+        fingerprintEnabled: lockMethod === 'fingerprint' && fingerprintAvailable,
         webauthnCredentialId, updatedAt: Date.now(),
       });
       await syncLockStatus(supabaseUser.id, true);
@@ -362,18 +361,18 @@ export function Settings() {
     try {
       const tables = [
         'devotees', 'expenses', 'payment_histories', 'pooja_bookings', 'pooja_slots',
-        'vip_gotrams', 'cultural_events', 'spl_records', 'feedback', 
-        'feedback_questions', 'qr_portal_settings', 'public_chanda_requests'
+        'vip_gotrams', 'cultural_events', 'spl_records', 'feedback',
+        'feedback_questions', 'qr_portal_settings'
       ];
       const backupData: any = {};
-      
+
       for (const table of tables) {
         const { data, error } = await supabase.from(table).select('*');
         if (!error && data) {
           backupData[table] = data;
         }
       }
-      
+
       const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -383,7 +382,7 @@ export function Settings() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
+
       toast.success('Backup exported successfully!', { id: toastId });
     } catch (e: any) {
       toast.error('Failed to export backup: ' + e.message, { id: toastId });
@@ -395,12 +394,12 @@ export function Settings() {
   const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     if (!window.confirm("⚠️ WARNING: Restoring will overwrite existing matching records. Are you sure?")) {
       e.target.value = '';
       return;
     }
-    
+
     setLoading(true);
     const toastId = toast.loading('Restoring data from backup...');
     try {
@@ -409,7 +408,7 @@ export function Settings() {
         try {
           const backupData = JSON.parse(event.target?.result as string);
           let successCount = 0;
-          
+
           for (const table of Object.keys(backupData)) {
             const records = backupData[table];
             if (Array.isArray(records) && records.length > 0) {
@@ -417,7 +416,7 @@ export function Settings() {
               if (!error) successCount++;
             }
           }
-          
+
           toast.success(`Restore completed! Processed ${successCount} tables.`, { id: toastId });
         } catch (err: any) {
           toast.error('Failed to parse or restore backup data', { id: toastId });
@@ -456,7 +455,10 @@ export function Settings() {
   const executeReset = async () => {
     setLoading(true);
     try {
-      if (resetOptions.devotees) await supabase.from('devotees').delete().not('id', 'is', null);
+      if (resetOptions.devotees) {
+        await supabase.from('devotees').delete().not('id', 'is', null);
+        await supabase.from('counters').delete().like('id', 'receipt_%');
+      }
       if (resetOptions.expenses) await supabase.from('expenses').delete().not('id', 'is', null);
       if (resetOptions.payment_histories) await supabase.from('payment_histories').delete().not('id', 'is', null);
       if (resetOptions.vip_gotrams) await supabase.from('vip_gotrams').delete().not('id', 'is', null);
@@ -469,9 +471,9 @@ export function Settings() {
       if (resetOptions.qr_portal_settings) {
         await supabase.from('qr_portal_settings').delete().not('id', 'is', null);
       }
-      if (resetOptions.public_chanda_requests) await supabase.from('public_chanda_requests').delete().not('id', 'is', null);
+
       if (resetOptions.notifications) await supabase.from('notifications').delete().not('id', 'is', null);
-      
+
       if (resetOptions.pooja_bookings) {
         await supabase.from('pooja_bookings').delete().not('id', 'is', null);
         await supabase.from('pooja_slots').update({ status: 'available' }).not('id', 'is', null);
@@ -494,7 +496,7 @@ export function Settings() {
     setResetOptions({
       devotees: checked, expenses: checked, payment_histories: checked, pooja_bookings: checked,
       vip_gotrams: checked, cultural_events: checked, spl_records: checked, feedback: checked,
-      qr_portal_settings: checked, public_chanda_requests: checked, notifications: checked,
+      qr_portal_settings: checked, notifications: checked,
     });
   };
 
@@ -523,12 +525,11 @@ export function Settings() {
             { id: 'restore', label: 'Restore', icon: Upload, show: isSuperAdmin },
             { id: 'reset', label: 'Reset System', icon: AlertTriangle, show: isSuperAdmin },
           ].filter(t => t.show).map(tab => (
-            <button 
+            <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-colors ${
-                activeTab === tab.id ? 'bg-orange-500 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-orange-50'
-              } ${tab.id === 'reset' ? 'hover:bg-red-50 hover:text-red-600' : ''}`}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-colors ${activeTab === tab.id ? 'bg-orange-500 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-orange-50'
+                } ${tab.id === 'reset' ? 'hover:bg-red-50 hover:text-red-600' : ''}`}
             >
               <tab.icon size={18} /> {tab.label}
             </button>
@@ -540,7 +541,7 @@ export function Settings() {
             <div className="p-8 space-y-12">
               {/* Profile Details */}
               <section>
-                <h2 className="text-xl font-bold text-gray-900 mb-6 border-b pb-2 flex items-center gap-2"><User size={20}/> Profile Details</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-6 border-b pb-2 flex items-center gap-2"><User size={20} /> Profile Details</h2>
                 <div className="flex items-center gap-6 mb-8 p-4 bg-orange-50/50 rounded-2xl border border-orange-100">
                   <div className="h-20 w-20 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 flex items-center justify-center text-white font-black shadow-md overflow-hidden ring-4 ring-white">
                     {appUser?.photoURL ? (
@@ -569,7 +570,7 @@ export function Settings() {
 
               {/* Password Change */}
               <section>
-                <h2 className="text-xl font-bold text-gray-900 mb-6 border-b pb-2 flex items-center gap-2"><Lock size={20}/> Security & Password</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-6 border-b pb-2 flex items-center gap-2"><Lock size={20} /> Security & Password</h2>
                 <form onSubmit={handleUpdatePassword} className="space-y-4 max-w-md">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Old Password</label>
@@ -599,7 +600,7 @@ export function Settings() {
               {/* App Lock */}
               <section>
                 <div className="flex items-center justify-between mb-4 border-b pb-2">
-                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><ShieldCheck size={20}/> App Lock</h2>
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><ShieldCheck size={20} /> App Lock</h2>
                   <label className="inline-flex items-center cursor-pointer">
                     <input type="checkbox" checked={lockEnabled} onChange={(e) => handleToggleAppLock(e.target.checked)} className="sr-only peer" />
                     <span className="h-6 w-11 rounded-full bg-gray-200 peer-checked:bg-orange-500 after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full relative"></span>
@@ -630,9 +631,9 @@ export function Settings() {
                       <div className="pt-4 space-y-4 border-t border-gray-100">
                         <div className="flex items-center justify-between">
                           <label className="text-sm font-semibold text-gray-700">Auto Lock Timeout</label>
-                          <select 
-                            value={inactivityMinutes} 
-                            onChange={(e) => setInactivityMinutes(parseFloat(e.target.value))} 
+                          <select
+                            value={inactivityMinutes}
+                            onChange={(e) => setInactivityMinutes(parseFloat(e.target.value))}
                             className="px-3 py-1.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white text-sm"
                           >
                             <option value={0}>Immediately</option>
@@ -680,17 +681,17 @@ export function Settings() {
                   </div>
                   <button onClick={handleSaveUpiId} disabled={loading || !upiId.trim()} className="mt-5 px-6 py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-sm disabled:opacity-50">Save UPI</button>
                 </div>
-                
+
                 <div className="flex items-center gap-4 max-w-md">
                   <div className="flex-1">
                     <label className="block text-xs font-semibold text-gray-500 mb-1">Committee UPI-linked Mobile Number (Payment Apps)</label>
-                    <input 
+                    <input
                       type="text"
                       inputMode="numeric"
-                      placeholder="10-digit mobile number" 
-                      value={upiMobile} 
-                      onChange={(e) => setUpiMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} 
-                      className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none" 
+                      placeholder="10-digit mobile number"
+                      value={upiMobile}
+                      onChange={(e) => setUpiMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
                     />
                   </div>
                   <button onClick={handleSaveUpiMobile} disabled={loading || !upiMobile.trim() || upiMobile.trim().length !== 10} className="mt-5 px-6 py-2 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-sm disabled:opacity-50">Save Mobile</button>
@@ -721,9 +722,9 @@ export function Settings() {
                   <div className="flex flex-col items-center gap-2">
                     <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Current Logo</span>
                     <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-white flex items-center justify-center">
-                      <img 
-                        src={appSettings?.logo_url || '/logo.jpg'} 
-                        alt="Current Logo" 
+                      <img
+                        src={appSettings?.logo_url || '/logo.jpg'}
+                        alt="Current Logo"
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -735,10 +736,10 @@ export function Settings() {
                     <div className="flex items-center gap-4">
                       <label className="cursor-pointer px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2">
                         {uploadingLogo ? 'Uploading...' : <><Upload size={18} /> Select Image</>}
-                        <input 
-                          type="file" 
-                          accept="image/png, image/jpeg, image/webp" 
-                          className="hidden" 
+                        <input
+                          type="file"
+                          accept="image/png, image/jpeg, image/webp"
+                          className="hidden"
                           onChange={handleLogoUpload}
                           disabled={uploadingLogo}
                         />
@@ -760,7 +761,7 @@ export function Settings() {
               <div className="space-y-8">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">Chanda Confirmation Template</label>
-                  <textarea 
+                  <textarea
                     value={templates.chandaConfirmation}
                     onChange={(e) => setTemplates(p => ({ ...p, chandaConfirmation: e.target.value }))}
                     className="w-full h-40 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
@@ -771,7 +772,7 @@ export function Settings() {
 
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">Chanda Pending Reminder Template</label>
-                  <textarea 
+                  <textarea
                     value={templates.chandaPending}
                     onChange={(e) => setTemplates(p => ({ ...p, chandaPending: e.target.value }))}
                     className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
@@ -781,7 +782,7 @@ export function Settings() {
 
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">Pooja Confirmation Template</label>
-                  <textarea 
+                  <textarea
                     value={templates.poojaConfirmation}
                     onChange={(e) => setTemplates(p => ({ ...p, poojaConfirmation: e.target.value }))}
                     className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
@@ -791,7 +792,7 @@ export function Settings() {
 
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">Pooja Reminder Template</label>
-                  <textarea 
+                  <textarea
                     value={templates.poojaReminder}
                     onChange={(e) => setTemplates(p => ({ ...p, poojaReminder: e.target.value }))}
                     className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
@@ -801,7 +802,7 @@ export function Settings() {
 
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">Festival Greeting Template</label>
-                  <textarea 
+                  <textarea
                     value={templates.festivalGreeting}
                     onChange={(e) => setTemplates(p => ({ ...p, festivalGreeting: e.target.value }))}
                     className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none resize-none font-mono text-sm"
@@ -810,7 +811,7 @@ export function Settings() {
                 </div>
 
                 <div className="pt-4 flex justify-end">
-                  <button 
+                  <button
                     onClick={handleSaveTemplates}
                     disabled={loading}
                     className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2"
@@ -828,7 +829,7 @@ export function Settings() {
               <h2 className="text-xl font-bold text-gray-900 mb-6 border-b pb-2">Backup System Data</h2>
               <p className="text-gray-500 mb-6">Export a full JSON snapshot of all system tables.</p>
               <button onClick={handleBackup} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2">
-                <Download size={20}/> Export Database to JSON
+                <Download size={20} /> Export Database to JSON
               </button>
             </div>
           )}
@@ -845,7 +846,7 @@ export function Settings() {
 
           {activeTab === 'reset' && isSuperAdmin && (
             <div className="p-8">
-              <h2 className="text-2xl font-black text-red-600 mb-2 flex items-center gap-2"><AlertTriangle size={24}/> Reset System</h2>
+              <h2 className="text-2xl font-black text-red-600 mb-2 flex items-center gap-2"><AlertTriangle size={24} /> Reset System</h2>
               <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 font-medium mb-8">
                 ⚠️ Warning: This action will permanently erase application data. This action cannot be undone.
               </div>
@@ -881,17 +882,17 @@ export function Settings() {
               {resetStep === 3 && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                   <p className="font-bold text-gray-800">Step 3: Select data to erase permanently</p>
-                  
+
                   <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <label className="flex items-center gap-3 font-black text-gray-900 pb-3 border-b border-gray-200 mb-3 cursor-pointer">
                       <input type="checkbox" checked={isEverythingSelected} onChange={handleSelectAllReset} className="w-5 h-5 text-red-600 rounded" />
                       Everything
                     </label>
-                    
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {Object.keys(resetOptions).map((key) => (
                         <label key={key} className="flex items-center gap-2 cursor-pointer font-medium text-gray-700">
-                          <input type="checkbox" checked={(resetOptions as any)[key]} onChange={(e) => setResetOptions({...resetOptions, [key]: e.target.checked})} className="w-4 h-4 text-red-600 rounded" />
+                          <input type="checkbox" checked={(resetOptions as any)[key]} onChange={(e) => setResetOptions({ ...resetOptions, [key]: e.target.checked })} className="w-4 h-4 text-red-600 rounded" />
                           {key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                         </label>
                       ))}

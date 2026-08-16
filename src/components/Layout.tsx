@@ -14,18 +14,17 @@ import { AppLockSetupPopup } from './AppLockSetupPopup';
 import { subscribeToUnreadCount } from '../lib/notifications';
 import { useGlobalLogo } from '../hooks/useGlobalLogo';
 import { useAppLockStore } from '../store/appLockStore';
-import { usePendingQRChandaRequests } from '../hooks/queries';
 
 const BASE_NAV_ITEMS = [
-  { path: '/dashboard',  label: 'Dashboard',          icon: LayoutDashboard },
-  { path: '/devotees',   label: 'Devotees',            icon: Users           },
-  { path: '/chanda',     label: 'Chanda Entry',        icon: HeartHandshake  },
-  { path: '/cultural',   label: 'Cultural Activities', icon: Music           },
-  { path: '/expenses',   label: 'Expenses & List',     icon: Receipt         },
-  { path: '/payments',   label: 'Payment List',        icon: CreditCard      },
-  { path: '/vip-gotram', label: 'VIP Gotram List',     icon: Crown           },
-  { path: '/pooja-booking', label: 'Pooja Booking',      icon: CalendarDays    },
-  { path: '/records',    label: 'Records',             icon: BookOpen        },
+  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/devotees', label: 'Devotees', icon: Users },
+  { path: '/chanda', label: 'Chanda Entry', icon: HeartHandshake },
+  { path: '/cultural', label: 'Cultural Activities', icon: Music },
+  { path: '/expenses', label: 'Expenses & List', icon: Receipt },
+  { path: '/payments', label: 'Payment List', icon: CreditCard },
+  { path: '/vip-gotram', label: 'VIP Gotram List', icon: Crown },
+  { path: '/pooja-booking', label: 'Pooja Booking', icon: CalendarDays },
+  { path: '/records', label: 'Records', icon: BookOpen },
 ];
 
 export function Layout() {
@@ -37,9 +36,6 @@ export function Layout() {
   const profileRef = useRef<HTMLDivElement>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const { checkSetupStatus } = useAppLockStore();
-  
-  const { data: pendingReviews } = usePendingQRChandaRequests();
-  const pendingReviewsCount = pendingReviews?.length || 0;
 
   useEffect(() => {
     if (appUser?.id) {
@@ -62,7 +58,7 @@ export function Layout() {
       { path: '/admin/users', label: 'User Management', icon: Users },
       { path: '/admin/qr-portal-settings', label: 'QR Portal', icon: LayoutDashboard }
     ] : [])
-    .concat([{ path: '/settings',   label: 'Settings',            icon: SettingsIcon    }]);
+    .concat([{ path: '/settings', label: 'Settings', icon: SettingsIcon }]);
 
 
 
@@ -101,9 +97,9 @@ export function Layout() {
       <aside className="hidden flex-col w-64 bg-white shadow-xl z-20 border-r border-orange-100 flex-shrink-0">
         {/* Logo */}
         <div className="p-5 flex flex-col items-center justify-center border-b border-orange-100 bg-gradient-to-b from-orange-50 to-white">
-          <img 
-            src={logoSrc} 
-            alt="SVBB Logo" 
+          <img
+            src={logoSrc}
+            alt="SVBB Logo"
             className="w-16 h-16 rounded-full shadow-lg mb-3 ring-4 ring-orange-100 object-cover bg-white"
           />
           <h1 className="text-xs font-bold text-gray-700 text-center leading-snug">
@@ -119,10 +115,9 @@ export function Layout() {
               key={item.path}
               to={item.path}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 ${
-                  isActive
-                    ? 'bg-gradient-to-r from-orange-500 to-orange-400 text-white shadow-md shadow-orange-200'
-                    : 'text-gray-600 hover:bg-orange-50 hover:text-orange-600'
+                `flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200 ${isActive
+                  ? 'bg-gradient-to-r from-orange-500 to-orange-400 text-white shadow-md shadow-orange-200'
+                  : 'text-gray-600 hover:bg-orange-50 hover:text-orange-600'
                 }`
               }
             >
@@ -168,10 +163,9 @@ export function Layout() {
                   to={item.path}
                   onClick={() => setMobileOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl transition-all ${
-                      isActive
-                        ? 'bg-gradient-to-r from-orange-500 via-pink-500 to-purple-500 text-white shadow-md'
-                        : 'text-gray-600 hover:bg-orange-50 hover:text-orange-600'
+                    `flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl transition-all ${isActive
+                      ? 'bg-gradient-to-r from-orange-500 via-pink-500 to-purple-500 text-white shadow-md'
+                      : 'text-gray-600 hover:bg-orange-50 hover:text-orange-600'
                     }`
                   }
                 >
@@ -206,7 +200,7 @@ export function Layout() {
 
             {/* Center title (mobile & desktop) */}
             <div className="flex-1 flex justify-center items-center px-2">
-              <span 
+              <span
                 className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600 tracking-wide text-[16px] sm:text-xl drop-shadow-sm text-center"
                 style={{ fontFamily: "'Noto Sans Telugu', sans-serif", lineHeight: 1.2 }}
               >
@@ -227,24 +221,7 @@ export function Layout() {
                 </button>
               )}
 
-              {isAdmin && (
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/qr-chanda-reviews')}
-                    className="relative rounded-xl p-2.5 text-gray-500 transition-colors hover:bg-orange-50 hover:text-orange-600"
-                    aria-label="QR Chanda Reviews"
-                    title="QR Chanda Reviews"
-                  >
-                    <CheckCheck size={20} />
-                    {pendingReviewsCount > 0 && (
-                      <span className="absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-blue-500 px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white shadow-sm">
-                        {pendingReviewsCount}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              )}
+
 
               {isAdmin && (
                 <div className="relative mr-2">
@@ -265,66 +242,66 @@ export function Layout() {
               )}
 
               <div className="relative" ref={profileRef}>
-              <button
-                onClick={() => setProfileOpen(!profileOpen)}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-orange-50 transition-colors group"
-              >
-                <div className="h-9 w-9 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 flex items-center justify-center text-white font-black shadow-md ring-2 ring-white overflow-hidden">
-                  {appUser?.photoURL ? (
-                    <img src={appUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    initials
-                  )}
-                </div>
-                <div className="hidden sm:flex flex-col items-start leading-none">
-                  <span className="text-sm font-semibold text-gray-900">{appUser?.name}</span>
-                  <span className="text-[10px] text-orange-500 font-bold uppercase tracking-wider">{roleLabel}</span>
-                </div>
-                <ChevronDown
-                  size={16}
-                  className={`text-gray-400 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
-
-              {/* Dropdown Menu */}
-              {profileOpen && (
-                <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-orange-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
-                  {/* User info header */}
-                  <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
-                    <p className="text-sm font-bold text-gray-800 truncate">{appUser?.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{appUser?.email}</p>
+                <button
+                  onClick={() => setProfileOpen(!profileOpen)}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-orange-50 transition-colors group"
+                >
+                  <div className="h-9 w-9 rounded-full bg-gradient-to-r from-orange-400 to-orange-600 flex items-center justify-center text-white font-black shadow-md ring-2 ring-white overflow-hidden">
+                    {appUser?.photoURL ? (
+                      <img src={appUser.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      initials
+                    )}
                   </div>
-
-                  <div className="py-1">
-                    <button
-                      onClick={() => { navigate('/settings'); setProfileOpen(false); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                    >
-                      <User size={16} className="text-orange-400" />
-                      My Profile
-                    </button>
-
-                    <button
-                      onClick={() => { navigate('/settings'); setProfileOpen(false); }}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                    >
-                      <KeyRound size={16} className="text-orange-400" />
-                      Change Password
-                    </button>
-
-                    <div className="border-t border-gray-100 my-1" />
-
-                    <button
-                      onClick={handleLogout}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors font-semibold"
-                    >
-                      <LogOut size={16} />
-                      Logout
-                    </button>
+                  <div className="hidden sm:flex flex-col items-start leading-none">
+                    <span className="text-sm font-semibold text-gray-900">{appUser?.name}</span>
+                    <span className="text-[10px] text-orange-500 font-bold uppercase tracking-wider">{roleLabel}</span>
                   </div>
-                </div>
-              )}
-            </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-gray-400 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {/* Dropdown Menu */}
+                {profileOpen && (
+                  <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-orange-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                    {/* User info header */}
+                    <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
+                      <p className="text-sm font-bold text-gray-800 truncate">{appUser?.name}</p>
+                      <p className="text-xs text-gray-500 truncate">{appUser?.email}</p>
+                    </div>
+
+                    <div className="py-1">
+                      <button
+                        onClick={() => { navigate('/settings'); setProfileOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                      >
+                        <User size={16} className="text-orange-400" />
+                        My Profile
+                      </button>
+
+                      <button
+                        onClick={() => { navigate('/settings'); setProfileOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
+                      >
+                        <KeyRound size={16} className="text-orange-400" />
+                        Change Password
+                      </button>
+
+                      <div className="border-t border-gray-100 my-1" />
+
+                      <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors font-semibold"
+                      >
+                        <LogOut size={16} />
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -346,7 +323,7 @@ export function Layout() {
           </p>
         </footer>
       </div>
-      
+
       <InstallPrompt />
       <AppLockSetupPopup />
     </div>
