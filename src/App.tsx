@@ -38,6 +38,7 @@ const PortalReceipt = lazy(() => import('./pages/portal/PortalReceipt').then(m =
 const PortalPooja = lazy(() => import('./pages/portal/PortalPooja').then(m => ({ default: m.PortalPooja })));
 const PortalFeedback = lazy(() => import('./pages/portal/PortalFeedback').then(m => ({ default: m.PortalFeedback })));
 const QRChanda = lazy(() => import('./pages/portal/QRChanda').then(m => ({ default: m.QRChanda })));
+const DirectReceipt = lazy(() => import('./pages/DirectReceipt').then(m => ({ default: m.DirectReceipt })));
 
 export default function App() {
   const { setSession, fetchAppUser, setLoading } = useAuthStore();
@@ -97,6 +98,9 @@ export default function App() {
             <Route path="feedback" element={<PortalFeedback />} />
             <Route path="qr-chanda" element={<QRChanda />} />
           </Route>
+
+          {/* Direct WhatsApp Receipt Link */}
+          <Route path="/receipt/:id" element={<DirectReceipt />} />
 
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>

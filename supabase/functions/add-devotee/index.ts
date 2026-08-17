@@ -71,47 +71,72 @@ export default {
                     }
                 }
 
-                // Generate Receipt Number atomically
-                const currentYearStr = new Date().getFullYear().toString().slice(-2);
-                const counterKey = `receipt_${currentYearStr}`;
-                const { data: existing } = await ctx.supabaseAdmin.from('counters').select('count').eq('id', counterKey).single();
-                let currentCount = 1;
-                if (existing) {
-                    currentCount = (existing.count || 0) + 1;
-                    await ctx.supabaseAdmin.from('counters').update({ count: currentCount }).eq('id', counterKey);
-                } else {
-                    await ctx.supabaseAdmin.from('counters').insert({ id: counterKey, count: 1 });
-                }
-                const receiptNo = generateReceiptNo(currentCount);
+                // Generate Receipt Number via Lowest Available Logic
+                const currentYear = year || new Date().getFullYear();
+                const currentYearStr = currentYear.toString().slice(-2);
+                const prefix = `G${currentYearStr}-`;
 
-                // Insert into Devotees
-                const devoteeData = {
-                    name,
-                    phone: phone || '',
-                    total_amount: tAmt,
-                    paid_amount: pAmt,
-                    pending_amount: pending,
-                    donation_item: donation_item || '',
-                    payment_mode: payment_mode || 'Cash',
-                    payment_status: finalStatus,
-                    gotram: gotram || '',
-                    family_members: Array.isArray(family_members) ? family_members : [],
-                    year: year || new Date().getFullYear(),
-                    volunteer_id: volunteer_id || 'admin',
-                    volunteer_name: volunteer_name || 'Admin',
-                    volunteer_phone: volunteer_phone || '',
-                    created_at: transactionTime,
-                    receipt_no: receiptNo,
-                };
-
-                const { data: insertedRow, error: insertError } = await ctx.supabaseAdmin
+                const { data: allDevotees } = await ctx.supabaseAdmin
                     .from('devotees')
-                    .insert(devoteeData)
-                    .select('id')
-                    .single();
+                    .select('receipt_no')
+                    .eq('year', currentYear);
 
-                if (insertError) throw insertError;
-                const devoteeId = insertedRow.id;
+                const usedNumbers = new Set<number>();
+                if (allDevotees) {
+                    for (const d of allDevotees) {
+                        if (d.receipt_no && typeof d.receipt_no === 'string' && d.receipt_no.startsWith(prefix)) {
+                            const num = parseInt(d.receipt_no.replace(prefix, ''), 10);
+                            if (!isNaN(num)) usedNumbers.add(num);
+                        }
+                    }
+                }
+
+                let currentCount = 1;
+                let receiptNo = '';
+                let devoteeId = null;
+
+                while (true) {
+                    while (usedNumbers.has(currentCount)) {
+                        currentCount++;
+                    }
+                    receiptNo = `${prefix}${currentCount.toString().padStart(3, '0')}`;
+
+                    const devoteeData = {
+                        name,
+                        phone: phone || '',
+                        total_amount: tAmt,
+                        paid_amount: pAmt,
+                        pending_amount: pending,
+                        donation_item: donation_item || '',
+                        payment_mode: payment_mode || 'Cash',
+                        payment_status: finalStatus,
+                        gotram: gotram || '',
+                        family_members: Array.isArray(family_members) ? family_members : [],
+                        year: currentYear,
+                        volunteer_id: volunteer_id || 'admin',
+                        volunteer_name: volunteer_name || 'Admin',
+                        volunteer_phone: volunteer_phone || '',
+                        created_at: transactionTime,
+                        receipt_no: receiptNo,
+                    };
+
+                    const { data: insertedRow, error: insertError } = await ctx.supabaseAdmin
+                        .from('devotees')
+                        .insert(devoteeData)
+                        .select('id')
+                        .single();
+
+                    if (insertError) {
+                        if (insertError.code === '23505' || String(insertError.message).toLowerCase().includes('duplicate') || String(insertError.message).toLowerCase().includes('unique')) {
+                            usedNumbers.add(currentCount);
+                            continue;
+                        }
+                        throw insertError;
+                    }
+
+                    devoteeId = insertedRow.id;
+                    break;
+                }
 
                 // Payment History
                 if (pAmt > 0) {

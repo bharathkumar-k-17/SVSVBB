@@ -70,57 +70,74 @@ export default {
                 }
 
                 const year = new Date().getFullYear();
-
-                currentStep = 'generating receipt';
+                currentStep = 'generating receipt and inserting devotee';
                 const currentYearStr = year.toString().slice(-2);
-                const counterKey = `receipt_${currentYearStr}`;
-                const { data: existing } = await ctx.supabaseAdmin.from('counters').select('count').eq('id', counterKey).single();
-                let currentCount = 1;
-                if (existing) {
-                    currentCount = (existing.count || 0) + 1;
-                    await ctx.supabaseAdmin.from('counters').update({ count: currentCount }).eq('id', counterKey);
-                } else {
-                    await ctx.supabaseAdmin.from('counters').insert({ id: counterKey, count: 1 });
-                }
-                const receiptNo = generateReceiptNo(currentCount);
+                const prefix = `G${currentYearStr}-`;
 
-                currentStep = 'inserting devotee';
+                const { data: allDevotees } = await ctx.supabaseAdmin
+                    .from('devotees')
+                    .select('receipt_no')
+                    .eq('year', year);
+
+                const usedNumbers = new Set<number>();
+                if (allDevotees) {
+                    for (const d of allDevotees) {
+                        if (d.receipt_no && typeof d.receipt_no === 'string' && d.receipt_no.startsWith(prefix)) {
+                            const num = parseInt(d.receipt_no.replace(prefix, ''), 10);
+                            if (!isNaN(num)) usedNumbers.add(num);
+                        }
+                    }
+                }
+
                 const pending = tAmt - pAmt;
                 const finalStatus = pending === 0 ? 'PAID' : (pAmt > 0 ? 'PARTIAL' : 'UNPAID');
 
-                const devoteeData = {
-                    name: name.trim(),
-                    phone: phone.trim(),
-                    total_amount: tAmt,
-                    paid_amount: pAmt,
-                    pending_amount: pending,
-                    donation_item: donation_item || '',
-                    payment_mode: payment_mode || 'Cash',
-                    payment_status: finalStatus,
-                    gotram: gotram ? gotram.trim() : '',
-                    family_members: Array.isArray(family_members) ? family_members : [],
-                    year: year,
-                    volunteer_id: paidToUserId,
-                    volunteer_name: paidToName || 'Portal',
-                    volunteer_phone: paidToPhone || '',
-                    created_at: now,
-                    receipt_no: receiptNo
-                    // Intentionally omitting payment_proof_path, payment_proof_name, payment_proof_type here 
-                    // as they may not exist natively in the table and could cause 500 rejection 
-                    // compared to the working add-devotee flow.
-                };
+                let currentCount = 1;
+                let receiptNo = '';
+                let devoteeId = null;
 
-                const { data: insertedDevotee, error: devoteeError } = await ctx.supabaseAdmin
-                    .from('devotees')
-                    .insert(devoteeData)
-                    .select('id')
-                    .single();
+                while (true) {
+                    while (usedNumbers.has(currentCount)) {
+                        currentCount++;
+                    }
+                    receiptNo = `${prefix}${currentCount.toString().padStart(3, '0')}`;
 
-                if (devoteeError) {
-                    throw devoteeError;
+                    const devoteeData = {
+                        name: name.trim(),
+                        phone: phone.trim(),
+                        total_amount: tAmt,
+                        paid_amount: pAmt,
+                        pending_amount: pending,
+                        donation_item: donation_item || '',
+                        payment_mode: payment_mode || 'Cash',
+                        payment_status: finalStatus,
+                        gotram: gotram ? gotram.trim() : '',
+                        family_members: Array.isArray(family_members) ? family_members : [],
+                        year: year,
+                        volunteer_id: paidToUserId,
+                        volunteer_name: paidToName || 'Portal',
+                        volunteer_phone: paidToPhone || '',
+                        created_at: now,
+                        receipt_no: receiptNo
+                    };
+
+                    const { data: insertedDevotee, error: devoteeError } = await ctx.supabaseAdmin
+                        .from('devotees')
+                        .insert(devoteeData)
+                        .select('id')
+                        .single();
+
+                    if (devoteeError) {
+                        if (devoteeError.code === '23505' || String(devoteeError.message).toLowerCase().includes('duplicate') || String(devoteeError.message).toLowerCase().includes('unique')) {
+                            usedNumbers.add(currentCount);
+                            continue;
+                        }
+                        throw devoteeError;
+                    }
+
+                    devoteeId = insertedDevotee.id;
+                    break;
                 }
-
-                const devoteeId = insertedDevotee.id;
 
                 currentStep = 'payment history';
                 if (pAmt > 0) {

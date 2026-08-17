@@ -142,7 +142,7 @@ export const useDevotees = (
   pageSize: number,
   search: string,
   filter: string,
-  sortBy: 'LATEST' | 'AMOUNT_DESC'
+  sortBy: 'LATEST' | 'AMOUNT_DESC' | 'RECEIPT_ASC'
 ) => {
   return useQuery({
     queryKey: ['devotees', year, page, pageSize, search, filter, sortBy],
@@ -166,6 +166,9 @@ export const useDevotees = (
         query = query.order('created_at', { ascending: false });
       } else if (sortBy === 'AMOUNT_DESC') {
         query = query.order('total_amount', { ascending: false });
+      } else if (sortBy === 'RECEIPT_ASC') {
+        // Since receipt_no is formatted "G26-001", alphabetical order correlates with numerical order
+        query = query.order('receipt_no', { ascending: true });
       }
 
       const from = page * pageSize;

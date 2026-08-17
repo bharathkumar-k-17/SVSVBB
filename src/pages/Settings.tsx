@@ -12,6 +12,17 @@ import { useAppSettings } from '../hooks/queries';
 import { useAppLockStore } from '../store/appLockStore';
 import { useAppStore } from '../store/appStore';
 
+const RESET_OPTIONS = [
+  { id: 'devotees', label: 'Devotees', table: 'devotees', isYearScoped: true },
+  { id: 'culturalActivities', label: 'Cultural Activities', table: 'cultural_events', isYearScoped: true },
+  { id: 'expenses', label: 'Expenses & List', table: 'expenses', isYearScoped: true },
+  { id: 'paymentList', label: 'Payment List', table: 'payment_histories', isYearScoped: true },
+  { id: 'vipGotramList', label: 'VIP Gotram List', table: 'vip_gotrams', isYearScoped: true },
+  { id: 'notifications', label: 'Notifications', table: 'notifications', isYearScoped: false },
+  { id: 'feedback', label: 'Feedback', table: 'feedback', isYearScoped: false },
+  { id: 'records', label: 'records', table: 'spl_records', isYearScoped: false },
+];
+
 export function Settings() {
   const { appUser, supabaseUser } = useAuthStore();
   const navigate = useNavigate();
@@ -65,6 +76,8 @@ export function Settings() {
   const [resetStep, setResetStep] = useState(0);
   const [resetPassword, setResetPassword] = useState('');
   const [resetText, setResetText] = useState('');
+  const [resetSelection, setResetSelection] = useState<Record<string, boolean>>({});
+  const [resetCounters, setResetCounters] = useState(false);
   const { currentYear } = useAppStore();
   const [targetYear, setTargetYear] = useState(currentYear.toString());
 
@@ -450,38 +463,64 @@ export function Settings() {
     }
     const targetYearNum = Number(targetYear);
 
+    const selectedOptions = RESET_OPTIONS.filter(o => resetSelection[o.id]);
+    if (selectedOptions.length === 0 && !resetCounters) {
+      toast.error("Please select at least one section to reset.");
+      return;
+    }
+
     setLoading(true);
+    let errorMessages: string[] = [];
+
     try {
-      // 1. Delete Payment Histories for the target year (Child of devotees)
-      await supabase.from('payment_histories').delete().eq('year', targetYearNum);
+      for (const section of selectedOptions) {
+        if (section.isYearScoped) {
+          const { error } = await supabase.from(section.table).delete().eq('year', targetYearNum);
+          if (error) errorMessages.push(`${section.label}: ${error.message}`);
+        } else {
+          const { error } = await supabase.from(section.table).delete().not('id', 'is', null);
+          if (error) errorMessages.push(`${section.label}: ${error.message}`);
+        }
+      }
 
-      // 2. Delete VIP Gotrams generated for the target year (Child of devotees)
-      await supabase.from('vip_gotrams').delete().eq('year', targetYearNum);
+      if (resetCounters) {
+        const yearSuffix = targetYearNum.toString().slice(-2);
+        const { error } = await supabase.from('counters').delete().eq('id', `receipt_${yearSuffix}`);
+        if (error) errorMessages.push(`Receipt Counters: ${error.message}`);
+      }
 
-      // 3. Delete Devotees for the target year (Parent)
-      await supabase.from('devotees').delete().eq('year', targetYearNum);
+      if (errorMessages.length > 0) {
+        toast.error(`Reset completed with errors:\n${errorMessages.join('\n')}`);
+        setResetStep(0);
+        setResetPassword('');
+        setResetText('');
+      } else {
+        toast.success(`Selected data reset successfully.`);
+        setResetStep(0);
+        setResetPassword('');
+        setResetText('');
+        setResetSelection({});
+        setResetCounters(false);
 
-      // 4. Delete Expenses for the target year
-      await supabase.from('expenses').delete().eq('year', targetYearNum);
-
-      // 5. Delete specific notifications for the target year
-      // Since notifications don't typically have a year column natively without modifying schema,
-      // and user requested NOT to break schema, we will skip notification deletion unless reliably identifiable,
-      // but if the schema does not have year, skip it cleanly as requested.
-      // E.g., The user instructions said: "Use actual schema and year/date information. Do NOT delete unrelated notifications"
-
-      // 6. Reset the Receipt Counter for that specific year ONLY.
-      // SVSVBB260001 uses receipt_26
-      const yearSuffix = targetYearNum.toString().slice(-2);
-      await supabase.from('counters').delete().eq('id', `receipt_${yearSuffix}`);
-
-      toast.success(`Data for collection year ${targetYearNum} successfully reset.`);
-      setResetStep(0);
-      setResetPassword('');
-      setResetText('');
-    } catch (e) {
+        // Refresh selective data queries natively
+        selectedOptions.forEach(opt => {
+          if (opt.id === 'devotees') queryClient.invalidateQueries({ queryKey: ['devotees'] });
+          if (opt.id === 'expenses') queryClient.invalidateQueries({ queryKey: ['expenses'] });
+          if (opt.id === 'culturalActivities') queryClient.invalidateQueries({ queryKey: ['culturalEvents'] });
+          if (opt.id === 'paymentList') queryClient.invalidateQueries({ queryKey: ['payments'] });
+          if (opt.id === 'vipGotramList') queryClient.invalidateQueries({ queryKey: ['vipGotrams'] });
+          if (opt.id === 'notifications') queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          if (opt.id === 'feedback') queryClient.invalidateQueries({ queryKey: ['feedbackMessages'] });
+          if (opt.id === 'records') {
+            queryClient.invalidateQueries({ queryKey: ['splRecords'] });
+            queryClient.invalidateQueries({ queryKey: ['recordsData'] });
+            queryClient.invalidateQueries({ queryKey: ['dailyRecords'] });
+          }
+        });
+      }
+    } catch (e: any) {
       console.error(e);
-      toast.error('Failed to reset system.');
+      toast.error('Failed to reset system due to unexpected error.');
     } finally {
       setLoading(false);
     }
@@ -837,11 +876,67 @@ export function Settings() {
               </div>
 
               {resetStep === 0 && (
-                <div className="space-y-4 max-w-sm">
-                  <label className="block text-sm font-bold text-gray-700">Target Year to Reset</label>
-                  <input type="number" value={targetYear} onChange={(e) => setTargetYear(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none font-bold" />
-                  <button onClick={() => setResetStep(1)} className="px-6 py-3 w-full bg-red-600 hover:bg-red-700 text-white font-black rounded-xl shadow-md transition-colors mt-2">
-                    Initiate Reset for {targetYear}
+                <div className="space-y-6 max-w-lg animate-in fade-in">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Target Year</label>
+                    <input type="number" value={targetYear} onChange={(e) => setTargetYear(e.target.value)} className="w-full max-w-[200px] px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none font-bold" />
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b">
+                      <label className="block text-base font-black text-gray-800">Select sections to reset:</label>
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          const allSelected = RESET_OPTIONS.reduce((acc, opt) => ({ ...acc, [opt.id]: true }), {});
+                          setResetSelection(allSelected);
+                          setResetCounters(true);
+                        }} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg font-bold transition-colors">Select All</button>
+                        <button onClick={() => {
+                          setResetSelection({});
+                          setResetCounters(false);
+                        }} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg font-bold transition-colors">Clear Selection</button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+                      {RESET_OPTIONS.map(opt => (
+                        <label key={opt.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-red-50 hover:border-red-200 cursor-pointer transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={!!resetSelection[opt.id]}
+                            onChange={(e) => setResetSelection(prev => ({ ...prev, [opt.id]: e.target.checked }))}
+                            className="w-5 h-5 accent-red-500 rounded border-gray-300 pointer-events-none"
+                          />
+                          <span className="font-semibold text-gray-700 tracking-tight">{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="border-t pt-4">
+                      <label className="flex items-center gap-3 p-3 border border-orange-200 rounded-lg bg-orange-50/50 hover:bg-orange-50 cursor-pointer transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={resetCounters}
+                          onChange={(e) => setResetCounters(e.target.checked)}
+                          className="w-5 h-5 accent-orange-500 rounded pointer-events-none"
+                        />
+                        <span className="font-bold text-orange-800 tracking-tight">Receipt Counters</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const selectedCount = RESET_OPTIONS.filter(o => resetSelection[o.id]).length + (resetCounters ? 1 : 0);
+                      if (selectedCount === 0) {
+                        toast.error("Please select at least one section to reset.");
+                        return;
+                      }
+                      setResetStep(1)
+                    }}
+                    className="px-6 py-3.5 w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-wider text-sm rounded-xl shadow-lg shadow-red-500/30 transition-all active:scale-[0.98]"
+                  >
+                    Reset Selected Data
                   </button>
                 </div>
               )}
@@ -859,11 +954,23 @@ export function Settings() {
 
               {resetStep === 2 && (
                 <div className="space-y-4 max-w-sm animate-in fade-in slide-in-from-bottom-2">
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-2">
+                    <p className="font-bold text-red-800 mb-2">Reset Selected Data?</p>
+                    <p className="font-semibold text-red-700 text-sm mb-1">You selected:</p>
+                    <ul className="list-disc list-inside text-sm text-red-700 pl-2 mb-3 font-medium">
+                      {RESET_OPTIONS.filter(o => resetSelection[o.id]).map(o => (
+                        <li key={o.id}>{o.label}</li>
+                      ))}
+                      {resetCounters && <li>Receipt Counters</li>}
+                    </ul>
+                    <p className="text-xs text-red-600 font-medium">This data will be permanently removed for the selected section(s).</p>
+                  </div>
+
                   <p className="font-bold text-gray-800">Step 2: Type <span className="text-red-600 font-black tracking-widest">RESET {targetYear}</span> exactly to confirm.</p>
                   <input type="text" value={resetText} onChange={(e) => setResetText(e.target.value)} placeholder={`Type RESET ${targetYear}`} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none font-bold uppercase" />
                   <div className="flex gap-3 mt-4">
                     <button onClick={executeReset} disabled={loading || resetText.toUpperCase() !== `RESET ${targetYear}`} className="px-6 py-3 bg-red-600 text-white font-black uppercase text-sm rounded-xl hover:bg-red-700 flex-1 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl">
-                      {loading ? 'Erasing...' : 'Confirm Destruction'}
+                      {loading ? 'Erasing...' : 'Confirm Reset'}
                     </button>
                     <button onClick={() => { setResetStep(0); setResetText(''); setResetPassword(''); }} className="px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200">Cancel</button>
                   </div>

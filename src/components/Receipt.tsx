@@ -194,7 +194,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         return;
       }
       const baseUrl = window.location.origin;
-      const receiptUrl = `${baseUrl}/portal/receipt/${data.id || 'preview'}`;
+      const receiptUrl = `${baseUrl}/receipt/${data.id || 'preview'}`;
       shareReceiptWhatsApp(data, receiptUrl, templates.chanda_confirmation_template);
     });
 
@@ -206,7 +206,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
         return;
       }
       const baseUrl = window.location.origin;
-      const receiptUrl = `${baseUrl}/portal/receipt/${data.id || 'preview'}`;
+      const receiptUrl = `${baseUrl}/receipt/${data.id || 'preview'}`;
       const dateValue = (data as any).date || data.createdAt;
       const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
       const amount = data.totalAmount || data.paidAmount || 0;

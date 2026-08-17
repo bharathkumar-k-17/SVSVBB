@@ -29,10 +29,8 @@ export function Expenses() {
     currentYear,
     page,
     pageSize,
-    isVolunteer,
-    appUser?.email
+    isVolunteer
   );
-
   const displayExpenses = expensesData?.data || [];
   const totalCount = expensesData?.count || 0;
   const totalExpenses = expensesData?.totalExpenses || 0;
@@ -45,7 +43,7 @@ export function Expenses() {
     // Store current state for rollback if needed
     const currentData = { ...formData };
     const currentEditingId = editingId;
-    
+
     // Instantly clear form & state (Optimistic UI)
     setFormData({
       description: '',
@@ -121,7 +119,7 @@ export function Expenses() {
           .eq('id', id);
 
         if (error) throw error;
-        
+
         const deletedExp = displayExpenses.find((e: any) => e.id === id);
         if (deletedExp) {
           const amountStr = new Intl.NumberFormat('en-IN').format(deletedExp.amount);
@@ -131,7 +129,7 @@ export function Expenses() {
             message: `${appUser?.name || 'Volunteer'} deleted ₹${amountStr} expense for ${deletedExp.description}.`
           });
         }
-        
+
         refetch();
       } catch (err: any) {
         console.error(err);
@@ -154,8 +152,8 @@ export function Expenses() {
           </div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-red-100 p-4 w-full md:w-auto text-right">
-          <div className="text-sm font-semibold text-gray-500 uppercase">
-            {isVolunteer ? 'Your Total Expenses' : 'Total Expenses'}
+          <div className="text-sm font-semibold text-gray-500 uppercase flex items-center justify-end gap-1">
+            {isVolunteer ? 'Your Total Spent' : 'Total Spent / Expenses'}
           </div>
           <div className="text-3xl font-bold text-red-600">₹{totalExpenses.toLocaleString()}</div>
         </div>
@@ -165,7 +163,7 @@ export function Expenses() {
         <h2 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
           <Plus className="text-red-500" /> {editingId ? 'Edit Expense' : 'Add New Expense'}
         </h2>
-        
+
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="lg:col-span-2">
             <label className="block text-sm font-semibold text-gray-700 mb-1">Description</label>
@@ -173,7 +171,7 @@ export function Expenses() {
               type="text"
               required
               value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 shadow-sm outline-none text-base"
               placeholder=""
             />
@@ -186,7 +184,7 @@ export function Expenses() {
               min="1"
               inputMode="numeric"
               value={formData.amount}
-              onChange={(e) => setFormData({...formData, amount: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 shadow-sm outline-none font-bold text-gray-900 text-base"
               placeholder=""
             />
@@ -197,7 +195,7 @@ export function Expenses() {
               type="date"
               required
               value={formData.date}
-              onChange={(e) => setFormData({...formData, date: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 shadow-sm outline-none text-base"
             />
           </div>
@@ -207,12 +205,12 @@ export function Expenses() {
               type="text"
               required
               value={formData.category}
-              onChange={(e) => setFormData({...formData, category: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 shadow-sm outline-none text-base"
               placeholder=""
             />
           </div>
-          
+
           <div className="lg:col-span-4 mt-2">
             <button
               type="submit"
@@ -281,29 +279,29 @@ export function Expenses() {
             </tbody>
           </table>
         </div>
-        
+
         {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
-             <div className="text-sm text-gray-600">
-               Showing {page * pageSize + 1} to {Math.min((page + 1) * pageSize, totalCount)} of {totalCount} entries
-             </div>
-             <div className="flex gap-2">
-               <button
-                 onClick={() => setPage(p => Math.max(0, p - 1))}
-                 disabled={page === 0}
-                 className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
-               >
-                 <ChevronLeft className="h-4 w-4" />
-               </button>
-               <button
-                 onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                 disabled={page >= totalPages - 1}
-                 className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
-               >
-                 <ChevronRight className="h-4 w-4" />
-               </button>
-             </div>
+            <div className="text-sm text-gray-600">
+              Showing {page * pageSize + 1} to {Math.min((page + 1) * pageSize, totalCount)} of {totalCount} entries
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -13,7 +13,7 @@ import { shareReceiptWhatsApp } from '../lib/whatsapp';
 import { format } from 'date-fns';
 import { Skeleton } from '../components/ui/Skeleton';
 
-type SortOption = 'LATEST' | 'AMOUNT_DESC';
+type SortOption = 'LATEST' | 'AMOUNT_DESC' | 'RECEIPT_ASC';
 
 function formatCurrency(value: number) {
   return `₹${value.toLocaleString()}`;
@@ -22,10 +22,10 @@ function formatCurrency(value: number) {
 export function AllDevotees() {
   const { currentYear } = useAppStore();
   const { appUser } = useAuthStore();
-  
+
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebounce(searchInput, 300);
-  
+
   const [filter, setFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState<SortOption>('LATEST');
   const [page, setPage] = useState(0);
@@ -34,9 +34,15 @@ export function AllDevotees() {
   const [selectedDevotee, setSelectedDevotee] = useState<any>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  
+
   const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
   const isVolunteer = appUser?.role === 'volunteer';
+
+  // Default to receipt asc for standard display, user prefers it
+  if (sortBy === 'LATEST' && debouncedSearch === '' && page === 0 && !sessionStorage.getItem('devoteesSortFixed')) {
+    setSortBy('RECEIPT_ASC');
+    sessionStorage.setItem('devoteesSortFixed', 'true');
+  }
 
   const { data: devoteesData, isLoading, refetch } = useDevotees(
     currentYear,
@@ -99,7 +105,7 @@ export function AllDevotees() {
     try {
       const baseUrl = window.location.origin;
       const receiptUrl = `${baseUrl}/portal/receipt/${dev.id}`;
-      
+
       shareReceiptWhatsApp(dev, receiptUrl, appSettings?.chanda_confirmation_template);
     } catch (e) {
       console.error("WhatsApp share error:", e);
@@ -159,18 +165,17 @@ export function AllDevotees() {
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
           <div className="flex bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden text-sm w-full sm:w-auto">
             {['ALL', 'PAID', 'PARTIAL', 'UNPAID', 'VIP'].map(f => (
-            <button
-              key={f}
-              onClick={() => handleFilterChange(f)}
-              className={`flex-1 sm:flex-none px-4 py-2 font-medium transition-colors ${
-                filter === f 
-                  ? 'bg-primary text-white' 
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              } ${f !== 'VIP' ? 'border-r border-gray-200' : ''}`}
-            >
-              {f}
-            </button>
-          ))}
+              <button
+                key={f}
+                onClick={() => handleFilterChange(f)}
+                className={`flex-1 sm:flex-none px-4 py-2 font-medium transition-colors ${filter === f
+                    ? 'bg-primary text-white'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  } ${f !== 'VIP' ? 'border-r border-gray-200' : ''}`}
+              >
+                {f}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -200,7 +205,8 @@ export function AllDevotees() {
                 onChange={(e) => handleSortChange(e.target.value as SortOption)}
                 className="pl-9 pr-8 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary shadow-sm outline-none text-sm appearance-none bg-white font-medium text-gray-700 cursor-pointer"
               >
-                <option value="LATEST">Sort By: Latest</option>
+                <option value="LATEST">Latest Entries</option>
+                <option value="RECEIPT_ASC">Receipt No (A-Z)</option>
                 <option value="AMOUNT_DESC">Top Amount</option>
               </select>
               <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none">
@@ -231,8 +237,8 @@ export function AllDevotees() {
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
               {devotees.map((dev) => (
-                <tr 
-                  key={dev.id} 
+                <tr
+                  key={dev.id}
                   className="hover:bg-orange-50/40 transition-all group"
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -249,9 +255,8 @@ export function AllDevotees() {
                     {maskPhoneNumber(dev.phone)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded border ${
-                      dev.paymentMode === 'UPI' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    }`}>
+                    <span className={`inline-block text-[10px] font-black px-2 py-0.5 rounded border ${dev.paymentMode === 'UPI' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      }`}>
                       {dev.paymentMode || 'Cash'}
                     </span>
                   </td>
@@ -264,51 +269,51 @@ export function AllDevotees() {
                   <td className="px-6 py-4 whitespace-nowrap text-right font-bold text-red-600">
                     ₹{(dev.pendingAmount || 0).toLocaleString()}
                   </td>
-                    {!isVolunteer && (
-                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                          <div className="flex items-center justify-center gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => handleWhatsAppShare(dev)} className="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 p-2 rounded-xl transition-all hover:scale-110" title="Share via WhatsApp">
-                              <MessageCircle size={18} />
-                            </button>
-                            <button onClick={() => handleSMSShare(dev)} className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-2 rounded-xl transition-all hover:scale-110" title="Share via SMS">
-                              <MessageSquare size={18} />
-                            </button>
+                  {!isVolunteer && (
+                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                      <div className="flex items-center justify-center gap-2 opacity-90 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleWhatsAppShare(dev)} className="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 p-2 rounded-xl transition-all hover:scale-110" title="Share via WhatsApp">
+                          <MessageCircle size={18} />
+                        </button>
+                        <button onClick={() => handleSMSShare(dev)} className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-2 rounded-xl transition-all hover:scale-110" title="Share via SMS">
+                          <MessageSquare size={18} />
+                        </button>
 
-                            {dev.pendingAmount > 0 && (
-                              <button onClick={() => handleSendReminder(dev)} className="text-orange-600 hover:text-orange-800 bg-orange-50 hover:bg-orange-100 p-2 rounded-xl transition-all hover:scale-110 border border-orange-200 shadow-sm" title="Send SMS Reminder">
-                                 <BellRing size={18} className="animate-pulse" />
-                              </button>
-                            )}
-                          
-                            {dev.pendingAmount > 0 && (
-                              <button onClick={() => {
-                                handleAddPayment(dev);
-                                refetch();
-                              }} className="text-white hover:text-white bg-primary hover:bg-orange-700 py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md hover:-translate-y-0.5" title="Collect Payment">
-                                <Plus size={16} /> <span className="text-xs font-bold whitespace-nowrap">Collect</span>
-                              </button>
-                            )}
-                            
-                            {isAdmin && (
-                              <div className="flex gap-1">
-                                <button onClick={() => {
-                                  handleEditDevotee(dev);
-                                  refetch();
-                                }} className="text-gray-500 hover:text-indigo-600 bg-gray-100 hover:bg-indigo-50 p-2 rounded-xl transition-all" title="Edit">
-                                  <Edit size={18} />
-                                </button>
-                                <button onClick={async () => {
-                                  await handleDelete(dev.id);
-                                  refetch();
-                                }} className="text-gray-500 hover:text-red-600 bg-gray-100 hover:bg-red-50 p-2 rounded-xl transition-all" title="Delete">
-                                  <Trash2 size={18} />
-                                </button>
-                              </div>
-                            )}
+                        {dev.pendingAmount > 0 && (
+                          <button onClick={() => handleSendReminder(dev)} className="text-orange-600 hover:text-orange-800 bg-orange-50 hover:bg-orange-100 p-2 rounded-xl transition-all hover:scale-110 border border-orange-200 shadow-sm" title="Send SMS Reminder">
+                            <BellRing size={18} className="animate-pulse" />
+                          </button>
+                        )}
+
+                        {dev.pendingAmount > 0 && (
+                          <button onClick={() => {
+                            handleAddPayment(dev);
+                            refetch();
+                          }} className="text-white hover:text-white bg-primary hover:bg-orange-700 py-2 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md hover:-translate-y-0.5" title="Collect Payment">
+                            <Plus size={16} /> <span className="text-xs font-bold whitespace-nowrap">Collect</span>
+                          </button>
+                        )}
+
+                        {isAdmin && (
+                          <div className="flex gap-1">
+                            <button onClick={() => {
+                              handleEditDevotee(dev);
+                              refetch();
+                            }} className="text-gray-500 hover:text-indigo-600 bg-gray-100 hover:bg-indigo-50 p-2 rounded-xl transition-all" title="Edit">
+                              <Edit size={18} />
+                            </button>
+                            <button onClick={async () => {
+                              await handleDelete(dev.id);
+                              refetch();
+                            }} className="text-gray-500 hover:text-red-600 bg-gray-100 hover:bg-red-50 p-2 rounded-xl transition-all" title="Delete">
+                              <Trash2 size={18} />
+                            </button>
                           </div>
-                      </td>
-                    )}
-                  </tr>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                </tr>
               ))}
               {devotees.length === 0 && (
                 <tr>
@@ -320,7 +325,7 @@ export function AllDevotees() {
                       <p className="text-xl font-bold text-gray-900">No devotees found</p>
                       <p className="text-sm max-w-xs mx-auto">We couldn't find any records matching your search or filter criteria. Try broadening your query.</p>
                       {(searchInput || filter !== 'ALL') && (
-                        <button 
+                        <button
                           onClick={() => { setSearchInput(''); setFilter('ALL'); }}
                           className="mt-6 text-primary font-bold hover:underline"
                         >
@@ -334,29 +339,29 @@ export function AllDevotees() {
             </tbody>
           </table>
         </div>
-        
+
         {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
-             <div className="text-sm text-gray-600">
-               Showing {page * pageSize + 1} to {Math.min((page + 1) * pageSize, totalCount)} of {totalCount} entries
-             </div>
-             <div className="flex gap-2">
-               <button
-                 onClick={() => setPage(p => Math.max(0, p - 1))}
-                 disabled={page === 0}
-                 className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
-               >
-                 <ChevronLeft className="h-4 w-4" />
-               </button>
-               <button
-                 onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                 disabled={page >= totalPages - 1}
-                 className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
-               >
-                 <ChevronRight className="h-4 w-4" />
-               </button>
-             </div>
+            <div className="text-sm text-gray-600">
+              Showing {page * pageSize + 1} to {Math.min((page + 1) * pageSize, totalCount)} of {totalCount} entries
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>
