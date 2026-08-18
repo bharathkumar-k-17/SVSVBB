@@ -101,14 +101,61 @@ export function AllDevotees() {
     }
   };
 
-  const handleWhatsAppShare = (dev: any) => {
+  const handleWhatsAppShare = async (dev: any) => {
     try {
       const baseUrl = window.location.origin;
-      const receiptUrl = `${baseUrl}/receipt/${dev.id}`;
+      // Fetch from API proxy to ensure dynamic generation if missing
+      const apiResponse = await fetch(`${baseUrl}/receipt/${dev.id}`);
+      if (!apiResponse.ok) {
+        alert('Unable to generate or fetch the receipt PDF. Please try again.');
+        return;
+      }
+      const blob = await apiResponse.blob();
 
-      shareReceiptWhatsApp(dev, receiptUrl, appSettings?.chanda_confirmation_template);
-    } catch (e) {
-      console.error("WhatsApp share error:", e);
+      if (!blob || blob.size === 0) {
+        alert("Unable to generate a valid receipt PDF. Please try again.");
+        return;
+      }
+
+      // Strict ArrayBuffer/Uint8Array validation
+      const arrBuffer = await blob.arrayBuffer();
+      const uint8 = new Uint8Array(arrBuffer);
+
+      // %PDF- magic bytes: 37 80 68 70 45
+      if (uint8.length < 5 || uint8[0] !== 37 || uint8[1] !== 80 || uint8[2] !== 68 || uint8[3] !== 70 || uint8[4] !== 45) {
+        alert("Unable to generate a valid receipt PDF. Please try again.");
+        console.error("Invalid PDF magic bytes from server.", uint8.slice(0, 5));
+        return;
+      }
+
+      // Reconstruct exactly from raw validated binary format as requested
+      const validatedBlob = new Blob([arrBuffer], { type: 'application/pdf' });
+      const filename = `SVSVBB-Receipt-${dev.receiptNo}.pdf`;
+      const file = new File([validatedBlob], filename, { type: 'application/pdf' });
+
+      const dateValue = dev.date || dev.createdAt;
+      const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
+      const payload = {
+        name: dev.name || '',
+        receiptNo: dev.receiptNo || '',
+        date: formattedDate,
+        festivalYear: new Date().getFullYear().toString()
+      };
+
+      const text = hydrateTemplate(appSettings?.chanda_confirmation_template || DEFAULT_CHANDA_CONFIRMATION, payload);
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          text: text
+        });
+      } else {
+        alert("PDF sharing is not supported on this device/browser. Please download the receipt PDF and attach it manually in WhatsApp.");
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.error("WhatsApp share error:", e);
+      }
     }
   };
 

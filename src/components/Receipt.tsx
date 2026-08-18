@@ -75,7 +75,22 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
     const defaultCollector = appUser?.name || 'Admin';
     const defaultCollectorPhone = appUser?.phone || '';
 
-    useImperativeHandle(ref, () => exportRef.current as HTMLDivElement);
+    useImperativeHandle(ref, () => ({
+      exportRef: exportRef.current,
+      generateBlob: async () => {
+        const canvas = await capture();
+        if (!canvas) return null;
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        const pageW = pdf.internal.pageSize.getWidth();
+        const pageH = pdf.internal.pageSize.getHeight();
+        const margin = 12;
+        const imgW = pageW - margin * 2;
+        const imgH = (canvas.height * imgW) / canvas.width;
+        const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, yOffset, imgW, imgH, '', 'FAST');
+        return pdf.output('blob');
+      }
+    } as any));
 
     const [templates, setTemplates] = useState<any>({});
 

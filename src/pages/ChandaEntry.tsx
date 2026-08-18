@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
 import { useDevotees, useAppSettings, useUsers } from '../hooks/queries';
 import { supabase } from '../lib/supabase';
-import { QrCode, Banknote, Save, HeartHandshake, Crown, UploadCloud, FileCheck, Trash2 } from 'lucide-react';
+import { QrCode, Banknote, Save, HeartHandshake, Crown, UploadCloud, FileCheck, Trash2, Download, AlertCircle, Share2, Plus, MessageCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Receipt } from '../components/Receipt';
 import { QRCodeSVG } from 'qrcode.react';
 import { formatCurrency } from '../lib/utils';
@@ -11,6 +12,7 @@ import { format } from 'date-fns';
 import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from '../lib/templates';
 import { TeluguInput } from '../components/TeluguInput';
 import { MaskedPhoneInput } from '../components/MaskedPhoneInput';
+import { generateReceiptNo } from '../lib/receipt';
 
 import { maskPhoneNumber, normalizePhoneDigits } from '../lib/privacy';
 import html2canvas from 'html2canvas';
@@ -42,35 +44,13 @@ export function ChandaEntry() {
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [paymentProofPath, setPaymentProofPath] = useState('');
 
-  const uploadReceiptPDF = async (devoteeId: string) => {
-    const element = document.getElementById('receipt-export-container');
-    if (!element) return false;
-    try {
-      await new Promise(r => setTimeout(r, 600)); // allow images to finish rendering
-      const canvas = await html2canvas(element, {
-        scale: 3,
-        useCORS: true,
-        windowWidth: 1024,
-        onclone: (clonedDoc) => {
-          const el = clonedDoc.getElementById('receipt-export-container');
-          if (el) {
-            el.style.width = '794px';
-            el.style.maxWidth = 'none';
-            el.style.minHeight = '1123px';
-          }
-        }
-      });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
-      const margin = 12;
-      const imgW = pageW - margin * 2;
-      const imgH = (canvas.height * imgW) / canvas.width;
-      const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
+  const receiptRef = useRef<any>(null);
 
-      pdf.addImage(imgData, 'PNG', margin, yOffset, imgW, imgH, '', 'FAST');
-      const blob = pdf.output('blob');
+  const uploadReceiptPDF = async (devoteeId: string) => {
+    if (!receiptRef.current) return false;
+    try {
+      const blob = await receiptRef.current.generateBlob();
+      if (!blob) return false;
 
       const { error } = await supabase.storage
         .from('payment-proofs')
@@ -327,12 +307,56 @@ export function ChandaEntry() {
     setLoading(true);
     try {
       await uploadReceiptPDF(lastSavedDevotee.id);
-      const baseUrl = window.location.origin;
-      const receiptUrl = `${baseUrl}/receipt/${lastSavedDevotee.id}`;
 
-      shareReceiptWhatsApp(lastSavedDevotee, receiptUrl, appSettings?.chanda_confirmation_template);
-    } catch (e) {
-      console.error("WhatsApp share error:", e);
+      if (!receiptRef.current) throw new Error("Receipt component is not mounted");
+      const blob = await receiptRef.current.generateBlob();
+
+      if (!blob || blob.size === 0) {
+        toast.error("Unable to generate the receipt PDF. Please try again.");
+        setLoading(false);
+        return;
+      }
+
+      // Strict ArrayBuffer/Uint8Array validation
+      const arrBuffer = await blob.arrayBuffer();
+      const uint8 = new Uint8Array(arrBuffer);
+
+      // %PDF- magic bytes: 37 80 68 70 45
+      if (uint8.length < 5 || uint8[0] !== 37 || uint8[1] !== 80 || uint8[2] !== 68 || uint8[3] !== 70 || uint8[4] !== 45) {
+        toast.error("Unable to generate a valid receipt PDF. Please try again.");
+        console.error("Invalid PDF magic bytes.", uint8.slice(0, 5));
+        setLoading(false);
+        return;
+      }
+
+      // Reconstruct exactly from raw validated binary format as requested
+      const validatedBlob = new Blob([arrBuffer], { type: 'application/pdf' });
+      const filename = `SVSVBB-Receipt-${lastSavedDevotee.receiptNo}.pdf`;
+      const file = new File([validatedBlob], filename, { type: 'application/pdf' });
+
+      const dateValue = lastSavedDevotee.date || lastSavedDevotee.createdAt;
+      const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
+      const payload = {
+        name: lastSavedDevotee.name || '',
+        receiptNo: lastSavedDevotee.receiptNo || '',
+        date: formattedDate,
+        festivalYear: new Date().getFullYear().toString()
+      };
+
+      const text = hydrateTemplate(appSettings?.chanda_confirmation_template || DEFAULT_CHANDA_CONFIRMATION, payload);
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          text: text
+        });
+      } else {
+        toast.error("PDF sharing is not supported on this device/browser. Please download the receipt PDF and attach it manually in WhatsApp.", { duration: 6000 });
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.error("WhatsApp share error:", e);
+      }
     } finally {
       setLoading(false);
     }
@@ -385,6 +409,7 @@ export function ChandaEntry() {
 
               <div className="w-full" id="receipt-container">
                 <Receipt
+                  ref={receiptRef}
                   data={lastSavedDevotee}
                   isBlank={false}
                   hideActions={false}
