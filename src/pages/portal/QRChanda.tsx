@@ -7,12 +7,15 @@ import { usePortalStore } from '../../store/portalStore';
 import { MaskedPhoneInput } from '../../components/MaskedPhoneInput';
 import { QRCodeSVG } from 'qrcode.react';
 import { Receipt } from '../../components/Receipt';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 export function QRChanda() {
     const { settings } = usePortalStore();
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [receiptNo, setReceiptNo] = useState('');
+    const [devoteeId, setDevoteeId] = useState('');
     const [committeeUsers, setCommitteeUsers] = useState<any[]>([]);
     const [isFetchingCommittee, setIsFetchingCommittee] = useState(true);
 
@@ -42,6 +45,33 @@ export function QRChanda() {
         }
         loadData();
     }, []);
+
+    useEffect(() => {
+        if (success && devoteeId) {
+            const uploadPdf = async () => {
+                const element = document.getElementById('receipt-export-container');
+                if (!element) return;
+                try {
+                    await new Promise(r => setTimeout(r, 600));
+                    const canvas = await html2canvas(element, {
+                        scale: 3, useCORS: true, windowWidth: 1024,
+                        onclone: (clonedDoc) => {
+                            const el = clonedDoc.getElementById('receipt-export-container');
+                            if (el) { el.style.width = '794px'; el.style.maxWidth = 'none'; el.style.minHeight = '1123px'; }
+                        }
+                    });
+                    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                    const pageW = pdf.internal.pageSize.getWidth(); const pageH = pdf.internal.pageSize.getHeight();
+                    const margin = 12; const imgW = pageW - margin * 2; const imgH = (canvas.height * imgW) / canvas.width;
+                    const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
+                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, yOffset, imgW, imgH, '', 'FAST');
+                    const blob = pdf.output('blob');
+                    await supabase.storage.from('payment-proofs').upload(`receipts/${devoteeId}.pdf`, blob, { contentType: 'application/pdf', upsert: true });
+                } catch (err) { console.error('Upload failed', err); }
+            };
+            uploadPdf();
+        }
+    }, [success, devoteeId]);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -96,6 +126,7 @@ export function QRChanda() {
             if (!data.success) throw new Error(data.error);
 
             setReceiptNo(data.receiptNo);
+            setDevoteeId(data.devoteeId);
             setSuccess(true);
         } catch (err: any) {
             toast.error(err.message || 'Failed to submit registration');
@@ -162,6 +193,7 @@ export function QRChanda() {
                     <button onClick={() => {
                         setSuccess(false);
                         setReceiptNo('');
+                        setDevoteeId('');
                         setFormData({
                             name: '', phone: '', total_amount: '', paid_amount: '',
                             payment_mode: '', donation_item: '', gotram: ''

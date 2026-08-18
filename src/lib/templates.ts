@@ -1,13 +1,21 @@
-export const DEFAULT_CHANDA_CONFIRMATION = `🙏 Sree Vara Sidhi Vinayaka Baktha Brundam
+export const DEFAULT_CHANDA_CONFIRMATION = `🙏 శ్రీ వరసిద్ధి వినాయక భక్త బృందం - {festivalYear}🙏
 
-Dear {name}, your Chanda of ₹{amount} has been recorded successfully.
+శ్రీ/శ్రీమతి {name} గారికి నమస్కారం.
 
-Receipt: {receiptNo}
+మీ చందా విజయవంతంగా నమోదు చేయబడింది.
 
-📄 View Receipt:
+🧾 receiptNo : {receiptNo}
+📅 Date : {date}
+
+మీ రసీదును వీక్షించడానికి / డౌన్లోడ్ చేసుకోవడానికి:
+
 {receiptLink}
 
-Thank you for your support. 🙏`;
+మీ అమూల్యమైన సహకారానికి మా కమిటీ తరఫున హృదయపూర్వక ధన్యవాదాలు.
+
+శ్రీ వరసిద్ధి వినాయక స్వామి వారి దివ్య ఆశీస్సులు మీకు, మీ కుటుంబ సభ్యులకు ఎల్లప్పుడూ ఉండాలని మనస్ఫూర్తిగా కోరుకుంటున్నాము.
+
+🙏 గణపతి బప్పా మోరియా 🙏`;
 
 export const DEFAULT_CHANDA_PENDING = `🙏 శ్రీ వరసిద్ధి వినాయక భక్త బృందం - {festivalYear}🙏
 

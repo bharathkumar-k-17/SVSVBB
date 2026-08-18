@@ -93,7 +93,6 @@ export default function App() {
           <Route path="/portal" element={<PortalLayout />}>
             <Route index element={<PortalHome />} />
             <Route path="receipt" element={<PortalReceipt />} />
-            <Route path="receipt/:id" element={<PortalReceipt />} />
             <Route path="pooja" element={<PortalPooja />} />
             <Route path="feedback" element={<PortalFeedback />} />
             <Route path="qr-chanda" element={<QRChanda />} />

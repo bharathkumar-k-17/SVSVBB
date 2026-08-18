@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/portal/receipt/:token",
+      "destination": "/api/receipt"
+    },
+    {
       "source": "/((?!assets/|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }

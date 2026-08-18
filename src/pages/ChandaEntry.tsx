@@ -42,6 +42,50 @@ export function ChandaEntry() {
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [paymentProofPath, setPaymentProofPath] = useState('');
 
+  const uploadReceiptPDF = async (devoteeId: string) => {
+    const element = document.getElementById('receipt-export-container');
+    if (!element) return false;
+    try {
+      await new Promise(r => setTimeout(r, 600)); // allow images to finish rendering
+      const canvas = await html2canvas(element, {
+        scale: 3,
+        useCORS: true,
+        windowWidth: 1024,
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById('receipt-export-container');
+          if (el) {
+            el.style.width = '794px';
+            el.style.maxWidth = 'none';
+            el.style.minHeight = '1123px';
+          }
+        }
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 12;
+      const imgW = pageW - margin * 2;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
+
+      pdf.addImage(imgData, 'PNG', margin, yOffset, imgW, imgH, '', 'FAST');
+      const blob = pdf.output('blob');
+
+      const { error } = await supabase.storage
+        .from('payment-proofs')
+        .upload(`receipts/${devoteeId}.pdf`, blob, {
+          contentType: 'application/pdf',
+          upsert: true
+        });
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.error('PDF upload failed', err);
+      return false;
+    }
+  };
+
   const generatePDF = async (receiptNo: string) => {
     const element = document.getElementById('receipt-export-container');
     if (!element) return;
@@ -282,8 +326,9 @@ export function ChandaEntry() {
     if (!lastSavedDevotee?.phone || !lastSavedDevotee?.id) return;
     setLoading(true);
     try {
+      await uploadReceiptPDF(lastSavedDevotee.id);
       const baseUrl = window.location.origin;
-      const receiptUrl = `${baseUrl}/receipt/${lastSavedDevotee.id}`;
+      const receiptUrl = `${baseUrl}/portal/receipt/${lastSavedDevotee.id}`;
 
       shareReceiptWhatsApp(lastSavedDevotee, receiptUrl, appSettings?.chanda_confirmation_template);
     } catch (e) {
@@ -297,7 +342,7 @@ export function ChandaEntry() {
     if (!lastSavedDevotee?.phone || !lastSavedDevotee?.id) return;
     const normalizedPhone = normalizePhoneDigits(lastSavedDevotee.phone);
     const baseUrl = window.location.origin;
-    const receiptUrl = `${baseUrl}/receipt/${lastSavedDevotee.id}`;
+    const receiptUrl = `${baseUrl}/portal/receipt/${lastSavedDevotee.id}`;
 
     const dateValue = lastSavedDevotee.date || lastSavedDevotee.createdAt;
     const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');

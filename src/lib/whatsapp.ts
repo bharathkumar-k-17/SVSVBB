@@ -22,7 +22,7 @@ export const shareReceiptWhatsApp = (devotee: any, receiptUrl: string, template?
     festivalYear: new Date().getFullYear().toString(),
   };
 
-  const text = hydrateTemplate(template || DEFAULT_CHANDA_CONFIRMATION, payload);
+  const text = hydrateTemplate(DEFAULT_CHANDA_CONFIRMATION, payload);
 
   let encodedText = encodeURIComponent(text);
   if (receiptUrl) {
