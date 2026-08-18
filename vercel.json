@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/portal/receipt/:token",
+      "source": "/receipt/:token",
       "destination": "/api/receipt"
     },
     {

@@ -98,9 +98,6 @@ export default function App() {
             <Route path="qr-chanda" element={<QRChanda />} />
           </Route>
 
-          {/* Direct WhatsApp Receipt Link */}
-          <Route path="/receipt/:id" element={<DirectReceipt />} />
-
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />

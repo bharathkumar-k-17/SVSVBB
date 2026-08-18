@@ -31,15 +31,15 @@ export function QRScanner({ onClose }: QRScannerProps) {
         try {
           const url = new URL(decodedText);
           const validDomains = ['svsvbb.vercel.app', window.location.hostname];
-          
+
           if (!validDomains.some(d => url.hostname.includes(d)) && !url.hostname.includes('localhost')) {
-             throw new Error('Invalid Domain');
+            throw new Error('Invalid Domain');
           }
-          
-          // Extract the path (e.g. /portal/receipt/123)
-          const path = url.pathname + url.search + url.hash;
+
+          // Use window.location.href instead of React Router navigate
+          // so that scanning receipt URLs triggers server-side Vercel rewrites (downloading the PDF).
           onClose();
-          navigate(path);
+          window.location.href = url.href;
         } catch (err) {
           toast.error("Invalid QR Code. Please scan a valid SVSVBB QR Code.", { duration: 4000 });
           setError("Invalid QR Code. Please scan a valid SVSVBB QR Code.");
@@ -84,15 +84,15 @@ export function QRScanner({ onClose }: QRScannerProps) {
         </div>
 
         <div className="p-6 relative">
-           {error && (
-             <div className="absolute top-8 left-1/2 -translate-x-1/2 w-[90%] z-50 bg-red-100 text-red-700 text-sm font-bold p-3 rounded-xl shadow-lg border border-red-200 text-center animate-in slide-in-from-top-2">
-               {error}
-             </div>
-           )}
-           <div id="reader" className="w-full bg-black rounded-2xl overflow-hidden shadow-inner border-4 border-gray-100"></div>
-           <p className="text-center text-xs text-gray-500 font-medium mt-6 uppercase tracking-wider">
-             Position the QR code within the frame
-           </p>
+          {error && (
+            <div className="absolute top-8 left-1/2 -translate-x-1/2 w-[90%] z-50 bg-red-100 text-red-700 text-sm font-bold p-3 rounded-xl shadow-lg border border-red-200 text-center animate-in slide-in-from-top-2">
+              {error}
+            </div>
+          )}
+          <div id="reader" className="w-full bg-black rounded-2xl overflow-hidden shadow-inner border-4 border-gray-100"></div>
+          <p className="text-center text-xs text-gray-500 font-medium mt-6 uppercase tracking-wider">
+            Position the QR code within the frame
+          </p>
         </div>
       </div>
     </div>

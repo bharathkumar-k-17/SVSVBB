@@ -328,7 +328,7 @@ export function ChandaEntry() {
     try {
       await uploadReceiptPDF(lastSavedDevotee.id);
       const baseUrl = window.location.origin;
-      const receiptUrl = `${baseUrl}/portal/receipt/${lastSavedDevotee.id}`;
+      const receiptUrl = `${baseUrl}/receipt/${lastSavedDevotee.id}`;
 
       shareReceiptWhatsApp(lastSavedDevotee, receiptUrl, appSettings?.chanda_confirmation_template);
     } catch (e) {
@@ -342,7 +342,7 @@ export function ChandaEntry() {
     if (!lastSavedDevotee?.phone || !lastSavedDevotee?.id) return;
     const normalizedPhone = normalizePhoneDigits(lastSavedDevotee.phone);
     const baseUrl = window.location.origin;
-    const receiptUrl = `${baseUrl}/portal/receipt/${lastSavedDevotee.id}`;
+    const receiptUrl = `${baseUrl}/receipt/${lastSavedDevotee.id}`;
 
     const dateValue = lastSavedDevotee.date || lastSavedDevotee.createdAt;
     const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');

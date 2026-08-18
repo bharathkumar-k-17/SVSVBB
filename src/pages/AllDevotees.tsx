@@ -104,7 +104,7 @@ export function AllDevotees() {
   const handleWhatsAppShare = (dev: any) => {
     try {
       const baseUrl = window.location.origin;
-      const receiptUrl = `${baseUrl}/portal/receipt/${dev.id}`;
+      const receiptUrl = `${baseUrl}/receipt/${dev.id}`;
 
       shareReceiptWhatsApp(dev, receiptUrl, appSettings?.chanda_confirmation_template);
     } catch (e) {
@@ -114,7 +114,7 @@ export function AllDevotees() {
 
   const handleSMSShare = (dev: any) => {
     const baseUrl = window.location.origin;
-    const receiptUrl = `${baseUrl}/portal/receipt/${dev.id}`;
+    const receiptUrl = `${baseUrl}/receipt/${dev.id}`;
     const dateValue = dev.date || dev.createdAt;
     const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
     const amount = dev.totalAmount || dev.paidAmount || 0;
@@ -169,8 +169,8 @@ export function AllDevotees() {
                 key={f}
                 onClick={() => handleFilterChange(f)}
                 className={`flex-1 sm:flex-none px-4 py-2 font-medium transition-colors ${filter === f
-                    ? 'bg-primary text-white'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-primary text-white'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   } ${f !== 'VIP' ? 'border-r border-gray-200' : ''}`}
               >
                 {f}
