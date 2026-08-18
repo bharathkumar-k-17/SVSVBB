@@ -98,6 +98,8 @@ export default function App() {
             <Route path="qr-chanda" element={<QRChanda />} />
           </Route>
 
+          <Route path="/preview-receipt/:id" element={<DirectReceipt />} />
+
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
