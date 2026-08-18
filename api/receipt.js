@@ -6,8 +6,8 @@ export default async function handler(req, res) {
     const token = req.query.token || req.query.id;
     if (!token) return res.status(404).send('Receipt Token missing');
 
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://kbhfvxckysuikofnblja.supabase.co';
-    const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://hoyowraugefllhzlmyzg.supabase.co';
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_r-saAga04rfVIBDjmvslFA_d9p1XfFD';
 
     if (!supabaseKey) {
         return res.status(500).send('Server configuration missing');
@@ -17,8 +17,16 @@ export default async function handler(req, res) {
         const supabase = createClient(supabaseUrl, supabaseKey);
 
         // 1 & 2 & 3. Validate and fetch data securely
-        const { data: receiptData, error: dbError } = await supabase.rpc('lookup_receipt_by_id', { receipt_id: token });
-        if (dbError || !receiptData || receiptData.length === 0 || !receiptData.receipt_no) {
+        let { data: receiptData, error: dbError } = await supabase.from('devotees').select('*').eq('id', token).single();
+
+        if (dbError || !receiptData) {
+            // Fallback for RLS limitations using the publicly accessible RPC present in production
+            const rpc = await supabase.rpc('lookup_receipt_by_id', { receipt_id: token });
+            receiptData = rpc.data;
+            dbError = rpc.error;
+        }
+
+        if (dbError || !receiptData || (!receiptData.receipt_no && !receiptData.receiptNo)) {
             return res.status(404).send('Receipt Not Found');
         }
 
