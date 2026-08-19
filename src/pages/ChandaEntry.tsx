@@ -363,7 +363,10 @@ export function ChandaEntry() {
           text: text
         });
       } else {
-        toast.error("PDF sharing is not supported on this device/browser. Please download the receipt PDF and attach it manually in WhatsApp.", { duration: 6000 });
+        toast.error("PDF sharing is not supported on this device/browser. Please download the PDF separately and attach it.", { duration: 6000 });
+        const waNumberStr = normalizedTarget.replace('+', '');
+        const encodedText = encodeURIComponent(text);
+        window.open(`https://wa.me/${waNumberStr}?text=${encodedText}`, '_blank');
       }
     } catch (e: any) {
       if (e.name !== 'AbortError') {

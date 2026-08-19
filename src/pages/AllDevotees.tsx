@@ -7,7 +7,7 @@ import { Search, Filter, Trash2, Edit, Plus, Crown, MessageCircle, MessageSquare
 import { PaymentModal } from '../components/PaymentModal';
 import { EditDevoteeModal } from '../components/EditDevoteeModal';
 import { supabase } from '../lib/supabase';
-import { maskPhoneNumber } from '../lib/privacy';
+import { maskPhoneNumber, getWhatsAppNumber } from '../lib/privacy';
 import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from '../lib/templates';
 import { shareReceiptWhatsApp } from '../lib/whatsapp';
 import { format } from 'date-fns';
@@ -150,7 +150,13 @@ export function AllDevotees() {
           text: text
         });
       } else {
-        alert("PDF sharing is not supported on this device/browser. Please download the receipt PDF and attach it manually in WhatsApp.");
+        alert("PDF sharing is not supported on this device/browser. Please download the receipt PDF and attach it manually.");
+        const rawPhone = getWhatsAppNumber(dev.phone);
+        const waNumberStr = rawPhone ? rawPhone.replace('+', '') : '';
+        if (waNumberStr) {
+          const encodedText = encodeURIComponent(text);
+          window.open(`https://wa.me/${waNumberStr}?text=${encodedText}`, '_blank');
+        }
       }
     } catch (e: any) {
       if (e.name !== 'AbortError') {
