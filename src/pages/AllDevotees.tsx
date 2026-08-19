@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useAuthStore } from '../store/authStore';
 import { useDevotees, useAppSettings } from '../hooks/queries';
@@ -6,6 +6,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { Search, Filter, Trash2, Edit, Plus, Crown, MessageCircle, MessageSquare, ArrowUpDown, BellRing, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PaymentModal } from '../components/PaymentModal';
 import { EditDevoteeModal } from '../components/EditDevoteeModal';
+import { Receipt } from '../components/Receipt';
 import { supabase } from '../lib/supabase';
 import { maskPhoneNumber, getWhatsAppNumber } from '../lib/privacy';
 import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from '../lib/templates';
@@ -34,6 +35,8 @@ export function AllDevotees() {
   const [selectedDevotee, setSelectedDevotee] = useState<any>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [previewDevotee, setPreviewDevotee] = useState<any>(null);
+  const receiptRef = useRef<any>(null);
 
   const isAdmin = appUser?.role === 'admin' || appUser?.role === 'superadmin';
   const isVolunteer = appUser?.role === 'volunteer';
@@ -101,19 +104,34 @@ export function AllDevotees() {
     }
   };
 
+  const deleteDevotee = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete ${name}? This action cannot be undone.`)) return;
+
+    try {
+      const { error } = await supabase.from('devotees').delete().eq('id', id);
+      if (error) throw error;
+      refetch();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete devotee');
+    }
+  };
+
+  const getGeneratedBlob = async (dev: any) => {
+    setPreviewDevotee(dev);
+    // Wait for state to apply and component to render images
+    await new Promise(r => setTimeout(r, 600));
+    if (!receiptRef.current) return null;
+    return await receiptRef.current.generateBlob();
+  };
+
   const handleWhatsAppShare = async (dev: any) => {
     try {
-      const baseUrl = window.location.origin;
-      // Fetch from API proxy to ensure dynamic generation if missing
-      const apiResponse = await fetch(`${baseUrl}/receipt/${dev.id}`);
-      if (!apiResponse.ok) {
-        alert('Unable to generate or fetch the receipt PDF. Please try again.');
-        return;
-      }
-      const blob = await apiResponse.blob();
+      const blob = await getGeneratedBlob(dev);
 
       if (!blob || blob.size === 0) {
         alert("Unable to generate a valid receipt PDF. Please try again.");
+        setPreviewDevotee(null);
         return;
       }
 
@@ -125,6 +143,7 @@ export function AllDevotees() {
       if (uint8.length < 5 || uint8[0] !== 37 || uint8[1] !== 80 || uint8[2] !== 68 || uint8[3] !== 70 || uint8[4] !== 45) {
         alert("Unable to generate a valid receipt PDF. Please try again.");
         console.error("Invalid PDF magic bytes from server.", uint8.slice(0, 5));
+        setPreviewDevotee(null);
         return;
       }
 
@@ -144,6 +163,8 @@ export function AllDevotees() {
 
       const text = hydrateTemplate(appSettings?.chanda_confirmation_template || DEFAULT_CHANDA_CONFIRMATION, payload);
 
+      setPreviewDevotee(null); // cleanup
+
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
@@ -162,6 +183,7 @@ export function AllDevotees() {
       if (e.name !== 'AbortError') {
         console.error("WhatsApp share error:", e);
       }
+      setPreviewDevotee(null);
     }
   };
 
@@ -424,6 +446,12 @@ export function AllDevotees() {
       )}
       {showEditModal && selectedDevotee && (
         <EditDevoteeModal devotee={selectedDevotee} onClose={() => setShowEditModal(false)} />
+      )}
+
+      {previewDevotee && (
+        <div style={{ position: 'absolute', top: '-10000px', left: '-10000px', opacity: 0, pointerEvents: 'none' }}>
+          <Receipt ref={receiptRef} data={previewDevotee} hideActions={true} />
+        </div>
       )}
     </div>
   );
