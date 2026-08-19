@@ -14,7 +14,7 @@ import { TeluguInput } from '../components/TeluguInput';
 import { MaskedPhoneInput } from '../components/MaskedPhoneInput';
 import { generateReceiptNo } from '../lib/receipt';
 
-import { maskPhoneNumber, normalizePhoneDigits } from '../lib/privacy';
+import { maskPhoneNumber, normalizePhoneDigits, getWhatsAppNumber } from '../lib/privacy';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { shareReceiptWhatsApp } from '../lib/whatsapp';
@@ -303,7 +303,19 @@ export function ChandaEntry() {
   const hasPhone = formData.phone && normalizePhoneDigits(formData.phone).length === 10;
 
   const handleShareWhatsApp = async () => {
-    if (!lastSavedDevotee?.phone || !lastSavedDevotee?.id) return;
+    // 1. Current form number Priority 1, Saved db number Priority 2
+    const formPhone = formData.phone?.replace(/\D/g, '');
+    const hasFormPhone = formPhone && formPhone.length >= 10;
+    const rawPhone = hasFormPhone ? formData.phone : lastSavedDevotee?.phone;
+
+    // Normalize safely to +91XXXXXXXXXX
+    const normalizedTarget = getWhatsAppNumber(rawPhone);
+    if (!normalizedTarget) {
+      toast.error("Mobile number is required to send the receipt on WhatsApp.");
+      return;
+    }
+
+    if (!lastSavedDevotee?.id) return;
     setLoading(true);
     try {
       await uploadReceiptPDF(lastSavedDevotee.id);

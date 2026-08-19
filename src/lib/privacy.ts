@@ -14,14 +14,14 @@ export const maskPhoneNumber = (value?: string | null) => {
 export const getWhatsAppNumber = (phone?: string | null): string => {
   if (!phone) return '';
   const digits = phone.replace(/\D/g, '');
-  
+
   if (!digits) return '';
 
   const last10 = digits.slice(-10);
-  
+
   if (last10.length === 10) {
-    return `91${last10}`;
+    return `+91${last10}`;
   }
-  
+
   return '';
 };

@@ -1,0 +1,1288 @@
+﻿commit 7df001a51ca594436a3880b7b659651405a8ba8a
+Author: Bharath Kumar <23ata05181@gpcet.ac.in>
+Date:   Tue Aug 18 15:53:00 2026 +0530
+
+    Fix corrupt WhatsApp PDF attachment by strictly unpacking ArrayBuffer, validating PDF magic bytes, and unifying generation through Receipt.tsx ref
+
+diff --git a/src/pages/AllDevotees.tsx b/src/pages/AllDevotees.tsx
+index 1eeb562..3891a46 100644
+--- a/src/pages/AllDevotees.tsx
++++ b/src/pages/AllDevotees.tsx
+@@ -101,14 +101,61 @@ export function AllDevotees() {
+     }
+   };
+ 
+-  const handleWhatsAppShare = (dev: any) => {
++  const handleWhatsAppShare = async (dev: any) => {
+     try {
+       const baseUrl = window.location.origin;
+-      const receiptUrl = `${baseUrl}/receipt/${dev.id}`;
++      // Fetch from API proxy to ensure dynamic generation if missing
++      const apiResponse = await fetch(`${baseUrl}/receipt/${dev.id}`);
++      if (!apiResponse.ok) {
++        alert('Unable to generate or fetch the receipt PDF. Please try again.');
++        return;
++      }
++      const blob = await apiResponse.blob();
++
++      if (!blob || blob.size === 0) {
++        alert("Unable to generate a valid receipt PDF. Please try again.");
++        return;
++      }
++
++      // Strict ArrayBuffer/Uint8Array validation
++      const arrBuffer = await blob.arrayBuffer();
++      const uint8 = new Uint8Array(arrBuffer);
+ 
+-      shareReceiptWhatsApp(dev, receiptUrl, appSettings?.chanda_confirmation_template);
+-    } catch (e) {
+-      console.error("WhatsApp share error:", e);
++      // %PDF- magic bytes: 37 80 68 70 45
++      if (uint8.length < 5 || uint8[0] !== 37 || uint8[1] !== 80 || uint8[2] !== 68 || uint8[3] !== 70 || uint8[4] !== 45) {
++        alert("Unable to generate a valid receipt PDF. Please try again.");
++        console.error("Invalid PDF magic bytes from server.", uint8.slice(0, 5));
++        return;
++      }
++
++      // Reconstruct exactly from raw validated binary format as requested
++      const validatedBlob = new Blob([arrBuffer], { type: 'application/pdf' });
++      const filename = `SVSVBB-Receipt-${dev.receiptNo}.pdf`;
++      const file = new File([validatedBlob], filename, { type: 'application/pdf' });
++
++      const dateValue = dev.date || dev.createdAt;
++      const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
++      const payload = {
++        name: dev.name || '',
++        receiptNo: dev.receiptNo || '',
++        date: formattedDate,
++        festivalYear: new Date().getFullYear().toString()
++      };
++
++      const text = hydrateTemplate(appSettings?.chanda_confirmation_template || DEFAULT_CHANDA_CONFIRMATION, payload);
++
++      if (navigator.canShare && navigator.canShare({ files: [file] })) {
++        await navigator.share({
++          files: [file],
++          text: text
++        });
++      } else {
++        alert("PDF sharing is not supported on this device/browser. Please download the receipt PDF and attach it manually in WhatsApp.");
++      }
++    } catch (e: any) {
++      if (e.name !== 'AbortError') {
++        console.error("WhatsApp share error:", e);
++      }
+     }
+   };
+ 
+diff --git a/src/pages/ChandaEntry.tsx b/src/pages/ChandaEntry.tsx
+index 6be306e..3e18a8a 100644
+--- a/src/pages/ChandaEntry.tsx
++++ b/src/pages/ChandaEntry.tsx
+@@ -1,9 +1,10 @@
+-import { useState, useEffect } from 'react';
++import { useState, useEffect, useRef } from 'react';
+ import { useAppStore } from '../store/appStore';
+ import { useAuthStore } from '../store/authStore';
+ import { useDevotees, useAppSettings, useUsers } from '../hooks/queries';
+ import { supabase } from '../lib/supabase';
+-import { QrCode, Banknote, Save, HeartHandshake, Crown, UploadCloud, FileCheck, Trash2 } from 'lucide-react';
++import { QrCode, Banknote, Save, HeartHandshake, Crown, UploadCloud, FileCheck, Trash2, Download, AlertCircle, Share2, Plus, MessageCircle } from 'lucide-react';
++import toast from 'react-hot-toast';
+ import { Receipt } from '../components/Receipt';
+ import { QRCodeSVG } from 'qrcode.react';
+ import { formatCurrency } from '../lib/utils';
+@@ -11,6 +12,7 @@ import { format } from 'date-fns';
+ import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from '../lib/templates';
+ import { TeluguInput } from '../components/TeluguInput';
+ import { MaskedPhoneInput } from '../components/MaskedPhoneInput';
++import { generateReceiptNo } from '../lib/receipt';
+ 
+ import { maskPhoneNumber, normalizePhoneDigits } from '../lib/privacy';
+ import html2canvas from 'html2canvas';
+@@ -42,35 +44,13 @@ export function ChandaEntry() {
+   const [isUploadingProof, setIsUploadingProof] = useState(false);
+   const [paymentProofPath, setPaymentProofPath] = useState('');
+ 
++  const receiptRef = useRef<any>(null);
++
+   const uploadReceiptPDF = async (devoteeId: string) => {
+-    const element = document.getElementById('receipt-export-container');
+-    if (!element) return false;
++    if (!receiptRef.current) return false;
+     try {
+-      await new Promise(r => setTimeout(r, 600)); // allow images to finish rendering
+-      const canvas = await html2canvas(element, {
+-        scale: 3,
+-        useCORS: true,
+-        windowWidth: 1024,
+-        onclone: (clonedDoc) => {
+-          const el = clonedDoc.getElementById('receipt-export-container');
+-          if (el) {
+-            el.style.width = '794px';
+-            el.style.maxWidth = 'none';
+-            el.style.minHeight = '1123px';
+-          }
+-        }
+-      });
+-      const imgData = canvas.toDataURL('image/png');
+-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+-      const pageW = pdf.internal.pageSize.getWidth();
+-      const pageH = pdf.internal.pageSize.getHeight();
+-      const margin = 12;
+-      const imgW = pageW - margin * 2;
+-      const imgH = (canvas.height * imgW) / canvas.width;
+-      const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
+-
+-      pdf.addImage(imgData, 'PNG', margin, yOffset, imgW, imgH, '', 'FAST');
+-      const blob = pdf.output('blob');
++      const blob = await receiptRef.current.generateBlob();
++      if (!blob) return false;
+ 
+       const { error } = await supabase.storage
+         .from('payment-proofs')
+@@ -327,12 +307,56 @@ export function ChandaEntry() {
+     setLoading(true);
+     try {
+       await uploadReceiptPDF(lastSavedDevotee.id);
+-      const baseUrl = window.location.origin;
+-      const receiptUrl = `${baseUrl}/receipt/${lastSavedDevotee.id}`;
+ 
+-      shareReceiptWhatsApp(lastSavedDevotee, receiptUrl, appSettings?.chanda_confirmation_template);
+-    } catch (e) {
+-      console.error("WhatsApp share error:", e);
++      if (!receiptRef.current) throw new Error("Receipt component is not mounted");
++      const blob = await receiptRef.current.generateBlob();
++
++      if (!blob || blob.size === 0) {
++        toast.error("Unable to generate the receipt PDF. Please try again.");
++        setLoading(false);
++        return;
++      }
++
++      // Strict ArrayBuffer/Uint8Array validation
++      const arrBuffer = await blob.arrayBuffer();
++      const uint8 = new Uint8Array(arrBuffer);
++
++      // %PDF- magic bytes: 37 80 68 70 45
++      if (uint8.length < 5 || uint8[0] !== 37 || uint8[1] !== 80 || uint8[2] !== 68 || uint8[3] !== 70 || uint8[4] !== 45) {
++        toast.error("Unable to generate a valid receipt PDF. Please try again.");
++        console.error("Invalid PDF magic bytes.", uint8.slice(0, 5));
++        setLoading(false);
++        return;
++      }
++
++      // Reconstruct exactly from raw validated binary format as requested
++      const validatedBlob = new Blob([arrBuffer], { type: 'application/pdf' });
++      const filename = `SVSVBB-Receipt-${lastSavedDevotee.receiptNo}.pdf`;
++      const file = new File([validatedBlob], filename, { type: 'application/pdf' });
++
++      const dateValue = lastSavedDevotee.date || lastSavedDevotee.createdAt;
++      const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
++      const payload = {
++        name: lastSavedDevotee.name || '',
++        receiptNo: lastSavedDevotee.receiptNo || '',
++        date: formattedDate,
++        festivalYear: new Date().getFullYear().toString()
++      };
++
++      const text = hydrateTemplate(appSettings?.chanda_confirmation_template || DEFAULT_CHANDA_CONFIRMATION, payload);
++
++      if (navigator.canShare && navigator.canShare({ files: [file] })) {
++        await navigator.share({
++          files: [file],
++          text: text
++        });
++      } else {
++        toast.error("PDF sharing is not supported on this device/browser. Please download the receipt PDF and attach it manually in WhatsApp.", { duration: 6000 });
++      }
++    } catch (e: any) {
++      if (e.name !== 'AbortError') {
++        console.error("WhatsApp share error:", e);
++      }
+     } finally {
+       setLoading(false);
+     }
+@@ -385,6 +409,7 @@ export function ChandaEntry() {
+ 
+               <div className="w-full" id="receipt-container">
+                 <Receipt
++                  ref={receiptRef}
+                   data={lastSavedDevotee}
+                   isBlank={false}
+                   hideActions={false}
+
+commit 2a3bef79f49359029a6633c30dcf6f1d16625f20
+Author: Bharath Kumar <23ata05181@gpcet.ac.in>
+Date:   Sun Aug 2 19:05:40 2026 +0530
+
+    feat: implement centralized Telugu message templates, pooja portal privacy, global logo, and password reset
+
+diff --git a/src/components/Receipt.tsx b/src/components/Receipt.tsx
+index 1c6bf30..8a020d5 100644
+--- a/src/components/Receipt.tsx
++++ b/src/components/Receipt.tsx
+@@ -6,6 +6,11 @@ import { Download, Printer, Share2, ImageIcon, Loader2 } from 'lucide-react';
+ import toast from 'react-hot-toast';
+ import { maskPhoneNumber } from '../lib/privacy';
+ import { supabase } from '../lib/supabase';
++import { useGlobalLogo } from '../hooks/useGlobalLogo';
++import { shareReceiptWhatsApp } from '../lib/whatsapp';
++import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from '../lib/templates';
++import { format } from 'date-fns';
++import { useAuthStore } from '../store/authStore';
+ 
+ /* ΓöÇΓöÇΓöÇ Types ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+ type FamilyMembers = string | string[] | undefined;
+@@ -53,22 +58,30 @@ const parseFamilyMembers = (fm: FamilyMembers): string[] => {
+ 
+ /* ΓöÇΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+-  ({ data, currentYear, isBlank = false, logoSrc = '/logo.jpg', qrValue, hideActions = false, isPortal = false }, ref) => {
++  ({ data, currentYear, isBlank = false, logoSrc: customLogoSrc, qrValue, hideActions = false, isPortal = false }, ref) => {
++    const globalLogo = useGlobalLogo();
++    const logoSrc = customLogoSrc || globalLogo;
+     const exportRef = useRef<HTMLDivElement>(null);
+     const [loading, setLoading] = useState<string | null>(null);
+     const [upiId, setUpiId] = useState<string>('');
++    const { appUser } = useAuthStore();
++    const defaultCollector = appUser?.name || 'Admin';
++    const defaultCollectorPhone = appUser?.phone || '';
+ 
+     useImperativeHandle(ref, () => exportRef.current as HTMLDivElement);
+ 
+-    /* ΓöÇ Fetch UPI ID ΓöÇ */
++    const [templates, setTemplates] = useState<any>({});
++
++    /* ΓöÇ Fetch UPI ID & Templates ΓöÇ */
+     useEffect(() => {
+-      const fetchUpi = async () => {
++      const fetchSettings = async () => {
+         try {
+-          const { data } = await supabase.from('app_settings').select('upi_id').eq('id', 'app').maybeSingle();
++          const { data } = await supabase.from('app_settings').select('upi_id, chanda_confirmation_template').eq('id', 'app').maybeSingle();
+           if (data?.upi_id) setUpiId(data.upi_id);
++          if (data) setTemplates(data);
+         } catch (err) {}
+       };
+-      fetchUpi();
++      fetchSettings();
+     }, []);
+ 
+     /* ΓöÇ Derived values ΓöÇ */
+@@ -120,8 +133,14 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+       if (!exportRef.current) return null;
+       return html2canvas(exportRef.current, {
+         scale: 3, useCORS: true, backgroundColor: '#ffffff', logging: false,
+-        windowWidth: exportRef.current.scrollWidth,
+-        windowHeight: exportRef.current.scrollHeight,
++        windowWidth: 1024,
++        onclone: (clonedDoc) => {
++          const el = clonedDoc.getElementById('receipt-export-container');
++          if (el) {
++            el.style.width = '794px';
++            el.style.minHeight = '1123px';
++          }
++        }
+       });
+     };
+ 
+@@ -159,56 +178,52 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+     });
+ 
+     const shareWhatsApp = () => withLoading('wa', async () => {
+-      const canvas = await capture(); if (!canvas) return;
+-      
+-      // Generate PDF
+-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+-      const pageW = pdf.internal.pageSize.getWidth();
+-      const pageH = pdf.internal.pageSize.getHeight();
+-      const margin = 12;
+-      const imgW = pageW - margin * 2;
+-      const imgH = (canvas.height * imgW) / canvas.width;
+-      const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
+-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.8), 'JPEG', margin, yOffset, imgW, imgH, '', 'FAST');
+-      
+-      const pdfBlob = pdf.output('blob');
+-      const file = new File([pdfBlob], `${receiptNo}.pdf`, { type: 'application/pdf' });
+-
+-      if (navigator.canShare?.({ files: [file] })) {
+-        try {
+-          await navigator.share({
+-            files: [file],
+-            title: isAck ? 'Acknowledgement Receipt' : 'Payment Receipt',
+-            text: `≡ƒÖÅ Receipt for ${data?.name || 'Devotee'} | ${receiptNo}`,
+-          });
+-        } catch (err) {
+-          console.warn('Share failed:', err);
+-          const msg = encodeURIComponent(`≡ƒÖÅ *SVSVBB Receipt*\nName: ${data?.name}\nReceipt: ${receiptNo}\nPaid: ${fmt(paidAmt)}\nPending: ${fmt(pendingAmt)}`);
+-          window.open(`https://wa.me/?text=${msg}`, '_blank');
+-        }
+-      } else {
+-        const msg = encodeURIComponent(`≡ƒÖÅ *SVSVBB Receipt*\nName: ${data?.name}\nReceipt: ${receiptNo}\nPaid: ${fmt(paidAmt)}\nPending: ${fmt(pendingAmt)}`);
+-        window.open(`https://wa.me/?text=${msg}`, '_blank');
++      if (!data?.phone) {
++        toast.error('No phone number available');
++        return;
+       }
++      const baseUrl = window.location.origin;
++      const receiptUrl = `${baseUrl}/portal/receipt/${data.id || 'preview'}`;
++      shareReceiptWhatsApp(data, receiptUrl, templates.chanda_confirmation_template);
+     });
+ 
+     // Auto-WhatsApp removed as requested
+ 
+     const shareSMS = () => {
+-      const msg = isAck ? 
+-        `α░╢α▒ìα░░α▒Ç α░╡α░░α░╕α░┐α░ªα▒ìα░ºα░┐ α░╡α░┐α░¿α░╛α░»α░ò α░¡α░òα▒ìα░ñ α░¼α▒âα░éα░ªα░é - ${displayYear}\n\nα░¬α▒çα░░α▒ü: ${data?.name}\nα░«α▒èα░ñα▒ìα░ñα░é: ${fmt(totalAmt)}\n\nα░«α▒Ç α░╡α░┐α░╡α░░α░╛α░▓α▒ü α░¿α░«α▒ïα░ªα▒ü α░Üα▒çα░»α░¼α░íα▒ìα░íα░╛α░»α░┐.\nα░Üα▒åα░▓α▒ìα░▓α░┐α░éα░¬α▒ü α░¬α▒åα░éα░íα░┐α░éα░ùα▒ìα░▓α▒ï α░ëα░éα░ªα░┐.\n\nα░ºα░¿α▒ìα░»α░╡α░╛α░ªα░╛α░▓α▒ü ≡ƒÖÅ` :
+-        `α░╢α▒ìα░░α▒Ç α░╡α░░α░╕α░┐α░ªα▒ìα░ºα░┐ α░╡α░┐α░¿α░╛α░»α░ò α░¡α░òα▒ìα░ñ α░¼α▒âα░éα░ªα░é - ${displayYear}\n\nα░¬α▒çα░░α▒ü: ${data?.name}\nα░Üα▒åα░▓α▒ìα░▓α░┐α░éα░Üα░┐α░¿ α░«α▒èα░ñα▒ìα░ñα░é: ${fmt(paidAmt)}\nα░░α░╕α▒Çα░ªα▒ü α░¿α░é: ${receiptNo}\n${pendingAmt > 0 ? `\nα░«α░┐α░ùα░┐α░▓α░┐α░¿ α░«α▒èα░ñα▒ìα░ñα░é: ${fmt(pendingAmt)}\nα░ªα░»α░Üα▒çα░╕α░┐ α░Üα▒åα░▓α▒ìα░▓α░┐α░éα░Üα░éα░íα░┐.\n` : ''}\nα░ºα░¿α▒ìα░»α░╡α░╛α░ªα░╛α░▓α▒ü ≡ƒÖÅ`;
++      if (!data?.phone) {
++        toast.error('No phone number available');
++        return;
++      }
++      const baseUrl = window.location.origin;
++      const receiptUrl = `${baseUrl}/portal/receipt/${data.id || 'preview'}`;
++      const dateValue = (data as any).date || data.createdAt;
++      const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
++      const amount = data.totalAmount || data.paidAmount || 0;
++
++      const payload = {
++        name: data.name || '',
++        receiptNo: receiptNo || '',
++        date: formattedDate,
++        amount: amount,
++        receiptLink: receiptUrl,
++        festivalYear: displayYear.toString(),
++      };
+ 
+-      window.open(`sms:${data?.phone}?body=${encodeURIComponent(msg)}`, '_blank');
++      const text = hydrateTemplate(templates.chanda_confirmation_template || DEFAULT_CHANDA_CONFIRMATION, payload);
++      let encodedText = encodeURIComponent(text);
++      if (receiptUrl) {
++        encodedText = encodedText.replace(encodeURIComponent(receiptUrl), receiptUrl);
++      }
++      window.open(`sms:${data.phone}?body=${encodedText}`, '_blank');
+     };
+ 
+     const BtnClass = (color: string) =>
+-      `inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-md ${color}`;
++      `inline-flex justify-center items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-md w-full sm:w-auto ${color}`;
+ 
+     return (
+       <div className="w-full">
+         {(!hideActions && !isPortal) && (
+-          <div className="flex flex-wrap items-center justify-center gap-3 mb-5 print:hidden">
++          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-3 mb-5 print:hidden">
+             <button onClick={downloadPDF} disabled={!!loading} className={BtnClass('bg-red-600 text-white hover:bg-red-700')}>
+               {loading === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download PDF
+             </button>
+@@ -234,10 +249,9 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+         ΓöÇΓöÇ */}
+         <div
+           ref={exportRef}
+-          className="relative mx-auto overflow-hidden bg-white border-2 border-amber-400 shadow-2xl"
++          id="receipt-export-container"
++          className="relative mx-auto overflow-hidden bg-white border-2 border-amber-400 shadow-2xl w-full max-w-[794px] sm:min-h-[1123px]"
+           style={{
+-            width: '794px',
+-            minHeight: '1123px',
+             fontFamily: "'Segoe UI', 'Noto Sans Telugu', sans-serif",
+             breakInside: 'avoid',
+           }}
+@@ -249,7 +263,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+             <img
+               src={logoSrc}
+               alt=""
+-              style={{ width: '480px', height: '480px', objectFit: 'cover', borderRadius: '50%', opacity: 0.14 }}
++              style={{ width: '480px', height: '480px', objectFit: 'cover', borderRadius: '50%', opacity: 0.35 }}
+             />
+           </div>
+ 
+@@ -258,21 +272,22 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+ 
+             {/* ΓòÉΓòÉΓòÉΓòÉ HEADER ΓòÉΓòÉΓòÉΓòÉ */}
+             <div
+-              className="flex items-center justify-between px-10 py-6 border-b-4 border-amber-400"
++              className="flex items-center justify-between px-2 sm:px-10 py-4 sm:py-6 gap-2 sm:gap-0 border-b-4 border-amber-400"
+               style={{ background: 'linear-gradient(135deg, rgba(255,247,237,0.85) 0%, rgba(254,243,199,0.85) 50%, rgba(255,247,237,0.85) 100%)' }}
+             >
+               {/* Left Logo */}
+               <img
+                 src={logoSrc} alt="Logo"
+-                style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
++                className="w-12 h-12 sm:w-[90px] sm:h-[90px]"
++                style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+               />
+ 
+               {/* Center Text */}
+-              <div style={{ textAlign: 'center', flex: 1, padding: '0 24px' }}>
+-                <p style={{ fontSize: '22px', fontWeight: 900, color: '#7c2d12', lineHeight: 1.3, letterSpacing: '0.02em' }}>
++              <div className="px-1 sm:px-6" style={{ textAlign: 'center', flex: 1 }}>
++                <p className="text-[14px] sm:text-[22px]" style={{ fontWeight: 900, color: '#7c2d12', lineHeight: 1.3, letterSpacing: '0.02em' }}>
+                   α░╢α▒ìα░░α▒Ç α░╡α░░α░╕α░┐α░ªα▒ìα░ºα░┐ α░╡α░┐α░¿α░╛α░»α░ò α░¡α░òα▒ìα░ñ α░¼α▒âα░éα░ªα░é
+                 </p>
+-                <p style={{ fontSize: '11px', fontWeight: 800, color: '#b45309', letterSpacing: '0.3em', marginTop: '4px', textTransform: 'uppercase' }}>
++                <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 800, color: '#b45309', letterSpacing: '0.3em', marginTop: '4px', textTransform: 'uppercase' }}>
+                   ΓÇö Sparkling Youth ΓÇö {displayYear} ΓÇö
+                 </p>
+                 <p style={{ fontSize: '12px', fontWeight: 600, color: '#92400e', marginTop: '3px' }}>
+@@ -282,8 +297,9 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+ 
+               {/* Right Logo */}
+               <img
+-                src={logoSrc} alt="Logo"
+-                style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
++                src={logoSrc} alt="Vinayaka"
++                className="w-12 h-12 sm:w-[90px] sm:h-[90px]"
++                style={{ borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+               />
+             </div>
+ 
+@@ -310,27 +326,27 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+               )}
+             </div>
+ 
+-            {/* ΓòÉΓòÉΓòÉΓòÉ MAIN BODY ΓòÉΓòÉΓòÉΓòÉ */}
+-            <div style={{ padding: '28px 40px', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
++            {/* ΓòÉΓòÉΓòÉΓòÉ BODY ΓòÉΓòÉΓòÉΓòÉ */}
++            <div className="px-3 py-4 sm:px-[40px] sm:py-[28px] gap-3 sm:gap-[20px]" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+ 
+-              {/* ΓöÇΓöÇ Row 1: Receipt No / Date / Time / Phone ΓöÇΓöÇ */}
+-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
++              {/* ≡ƒö╣ Row 1: Receipt No, Date, Time, Role */}
++              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-[16px]">
+                 {[
+                   { label: 'Receipt No', value: receiptNo },
+                   { label: 'Date',       value: dateLabel },
+                   { label: 'Time',       value: timeLabel },
+                   { label: 'Phone',      value: isBlank ? '__________' : (data?.phone || 'ΓÇö') },
+-                ].map(item => (
+-                  <div key={item.label} style={{
+-                    background: 'rgba(255,251,235,0.65)',
+-                    border: '1px solid #fcd34d',
+-                    borderRadius: '10px',
+-                    padding: '12px 14px',
++                ].map((item, idx) => (
++                  <div key={idx} className="px-2 py-2 sm:px-[16px] sm:py-[12px]" style={{
++                    background: 'rgba(255,247,237,0.7)',
++                    border: '1px solid #fde68a',
++                    borderRadius: '8px',
++                    textAlign: 'center',
+                   }}>
+-                    <p style={{ fontSize: '9px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '5px' }}>
++                    <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                       {item.label}
+                     </p>
+-                    <p style={{ fontSize: '13px', fontWeight: 800, color: '#450a0a', wordBreak: 'break-all', lineHeight: 1.3 }}>
++                    <p className="text-[12px] sm:text-[14px] break-all" style={{ fontWeight: 900, color: '#7c2d12', marginTop: '4px' }}>
+                       {item.value}
+                     </p>
+                   </div>
+@@ -352,12 +368,11 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+                 </p>
+               </div>
+ 
+-              {/* ΓöÇΓöÇ Payment Details ΓöÇΓöÇ */}
+-              <div style={{
+-                background: 'rgba(255,251,235,0.4)',
+-                border: '1px solid rgba(252, 211, 77, 0.5)',
++              {/* ≡ƒö╣ Payment Details Table */}
++              <div className="px-3 py-3 sm:px-[20px] sm:py-[24px]" style={{
++                background: 'rgba(255, 255, 255, 0.75)',
++                border: '2px solid #fcd34d',
+                 borderRadius: '12px',
+-                padding: '18px 20px',
+               }}>
+                 <p style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '12px' }}>
+                   Payment Details
+@@ -372,10 +387,10 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+                       { label: 'Payment Mode',  value: data?.paymentMode || (isBlank ? '________' : 'Cash'), color: '#450a0a' },
+                     ].map((row, i, arr) => (
+                       <tr key={row.label} style={{ borderBottom: i < arr.length - 1 ? '1px solid #fde68a' : 'none' }}>
+-                        <td style={{ padding: '11px 0', fontSize: '13px', fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
++                        <td className="py-[6px] sm:py-[11px] text-[10px] sm:text-[13px]" style={{ fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                           {row.label}
+                         </td>
+-                        <td style={{ padding: '11px 0', fontSize: '16px', fontWeight: 900, color: row.color, textAlign: 'right' }}>
++                        <td className="py-[6px] sm:py-[11px] text-[12px] sm:text-[16px]" style={{ fontWeight: 900, color: row.color, textAlign: 'right' }}>
+                           {row.value}
+                         </td>
+                       </tr>
+@@ -423,37 +438,35 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+               )}
+ 
+               {/* ΓöÇΓöÇ Footer: Collected By + QR ΓöÇΓöÇ */}
+-              <div style={{
++              <div className="px-4 py-4 sm:px-[20px] sm:py-[18px] flex-col sm:flex-row gap-4 sm:gap-[20px]" style={{
+                 background: 'rgba(255,251,235,0.65)',
+                 border: '1px solid #fcd34d',
+                 borderRadius: '12px',
+-                padding: '18px 20px',
+                 display: 'flex',
+                 alignItems: 'flex-end',
+                 justifyContent: 'space-between',
+-                gap: '20px',
+                 marginTop: 'auto',
+               }}>
+                 {/* Left: Collected By */}
+                 <div style={{ flex: 1 }}>
+-                  <p style={{ fontSize: '9px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '6px' }}>
++                  <p className="text-[8px] sm:text-[9px]" style={{ fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '6px' }}>
+                     Collected By
+                   </p>
+-                  <p style={{ fontSize: '17px', fontWeight: 900, color: '#450a0a', marginBottom: '2px' }}>
+-                    {isBlank ? '________________________' : (data?.volunteerName || 'Admin')}
++                  <p className="text-sm sm:text-[17px]" style={{ fontWeight: 900, color: '#450a0a', marginBottom: '2px' }}>
++                    {isBlank ? '________________________' : (data?.volunteerName || defaultCollector)}
+                   </p>
+-                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#92400e', marginBottom: '16px' }}>
+-                    {isBlank ? 'Mobile: ____________' : (data?.volunteerPhone ? `Mobile: ${data.volunteerPhone}` : '')}
++                  <p className="text-[9px] sm:text-[11px]" style={{ fontWeight: 700, color: '#92400e', marginBottom: '16px' }}>
++                    {isBlank ? 'Mobile: ____________' : ((data?.volunteerPhone || defaultCollectorPhone) ? `Mobile: ${data?.volunteerPhone || defaultCollectorPhone}` : '')}
+                   </p>
+ 
+                   {/* UPI badge */}
+                   {showPaymentQR && (
+-                    <div style={{
++                    <div className="px-2 py-1 sm:px-[12px] sm:py-[6px] mb-3 sm:mb-[14px]" style={{
+                       display: 'inline-flex', alignItems: 'center', gap: '6px',
+                       background: '#fff7ed', border: '1px solid #fdba74',
+-                      borderRadius: '8px', padding: '6px 12px', marginBottom: '14px',
++                      borderRadius: '8px',
+                     }}>
+-                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
++                      <span className="text-[8px] sm:text-[10px]" style={{ fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                         ≡ƒÆ│ Payment Pending ΓÇö UPI Available
+                       </span>
+                     </div>
+@@ -462,7 +475,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+                   {/* Signature */}
+                   <div>
+                     <div style={{ width: '120px', height: '1px', background: '#f59e0b', marginTop: '32px' }} />
+-                    <p style={{ fontSize: '9px', color: '#b45309', fontWeight: 700, marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
++                    <p className="text-[7px] sm:text-[9px]" style={{ color: '#b45309', fontWeight: 700, marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                       Authorised Signature
+                     </p>
+                   </div>
+@@ -470,12 +483,11 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+ 
+                 {/* Right: QR Code */}
+                 {showQR && (
+-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+-                    <div style={{
++                  <div className="w-full sm:w-auto flex flex-col items-center gap-2 sm:gap-[10px]">
++                    <div className="p-2 sm:p-[12px]" style={{
+                       background: '#fff',
+                       border: '3px solid #f59e0b',
+                       borderRadius: '16px',
+-                      padding: '12px',
+                       boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                     }}>
+                       <QRCodeSVG
+@@ -487,8 +499,7 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+                         level="H" // High resolution/error correction
+                       />
+                     </div>
+-                    <p style={{
+-                      fontSize: '10px',
++                    <p className="text-[8px] sm:text-[10px]" style={{
+                       fontWeight: 900,
+                       textAlign: 'center',
+                       maxWidth: '140px',
+@@ -505,16 +516,15 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
+             </div>
+ 
+             {/* ΓòÉΓòÉΓòÉΓòÉ BOTTOM FOOTER ΓòÉΓòÉΓòÉΓòÉ */}
+-            <div style={{
++            <div className="px-3 py-3 sm:px-[40px] sm:py-[16px]" style={{
+               background: 'linear-gradient(135deg, rgba(255,247,237,0.8), rgba(254,243,199,0.8))',
+               borderTop: '3px solid #f59e0b',
+-              padding: '16px 40px',
+               textAlign: 'center',
+             }}>
+-              <p style={{ fontSize: '20px', fontWeight: 900, color: '#7c2d12', letterSpacing: '0.03em' }}>
++              <p className="text-sm sm:text-[20px]" style={{ fontWeight: 900, color: '#7c2d12', letterSpacing: '0.03em' }}>
+                 ≡ƒÖÅ α░ºα░¿α▒ìα░»α░╡α░╛α░ªα░╛α░▓α▒ü ≡ƒÖÅ
+               </p>
+-              <p style={{ fontSize: '11px', fontWeight: 700, color: '#b45309', marginTop: '4px', letterSpacing: '0.08em' }}>
++              <p className="text-[8px] sm:text-[11px]" style={{ fontWeight: 700, color: '#b45309', marginTop: '4px', letterSpacing: '0.08em' }}>
+                 Γ£¿ α░╢α▒ìα░░α▒Ç α░╡α░░α░╕α░┐α░ªα▒ìα░ºα░┐ α░╡α░┐α░¿α░╛α░»α░ò α░¡α░òα▒ìα░ñ α░¼α▒âα░éα░ªα░é α░ñα░░α░¬α▒üα░¿ Γ£¿
+               </p>
+             </div>
+
+commit e0c0b0261a17338651605ed51e8a42fdfc3400f5
+Author: Bharath Kumar <23ata05181@gpcet.ac.in>
+Date:   Fri May 8 12:16:52 2026 +0530
+
+    first commit
+
+diff --git a/src/components/Receipt.tsx b/src/components/Receipt.tsx
+new file mode 100644
+index 0000000..860d7ac
+--- /dev/null
++++ b/src/components/Receipt.tsx
+@@ -0,0 +1,664 @@
++import React, { forwardRef, useImperativeHandle, useMemo, useRef, useState, useEffect } from 'react';
++import html2canvas from 'html2canvas';
++import jsPDF from 'jspdf';
++import { QRCodeSVG } from 'qrcode.react';
++import { Download, Printer, Share2, ImageIcon, Loader2 } from 'lucide-react';
++import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
++import { db, storage, functions } from '../lib/firebase';
++import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
++import { httpsCallable } from 'firebase/functions';
++import toast from 'react-hot-toast';
++import { maskPhoneNumber } from '../lib/privacy';
++
++/* ΓöÇΓöÇΓöÇ Types ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
++type FamilyMembers = string | string[] | undefined;
++
++interface ReceiptData {
++  id?: string;
++  whatsappSent?: boolean;
++  name?: string;
++  phone?: string;
++  totalAmount?: number;
++  paidAmount?: number;
++  pendingAmount?: number;
++  paymentMode?: string;
++  receiptNo?: string;
++  volunteerName?: string;
++  volunteerPhone?: string;
++  createdAt?: number | string | Date;
++  year?: number;
++  gotram?: string;
++  familyMembers?: FamilyMembers;
++  donationItem?: string;
++}
++
++interface ReceiptProps {
++  data?: Partial<ReceiptData>;
++  currentYear?: number;
++  isBlank?: boolean;
++  logoSrc?: string;
++  qrValue?: string;
++}
++
++/* ΓöÇΓöÇΓöÇ Helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
++const fmt = (v: number) =>
++  new Intl.NumberFormat('en-IN', {
++    style: 'currency', currency: 'INR', maximumFractionDigits: 0,
++  }).format(Number.isFinite(v) ? v : 0);
++
++const parseFamilyMembers = (fm: FamilyMembers): string[] => {
++  if (Array.isArray(fm)) return fm.map(s => s.trim()).filter(Boolean);
++  if (typeof fm === 'string') return fm.split(',').map(s => s.trim()).filter(Boolean);
++  return [];
++};
++
++/* ΓöÇΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
++export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
++  ({ data, currentYear, isBlank = false, logoSrc = '/logo.jpg', qrValue }, ref) => {
++    const exportRef = useRef<HTMLDivElement>(null);
++    const [loading, setLoading] = useState<string | null>(null);
++    const [waStatus, setWaStatus] = useState<null | 'sending' | 'sent' | 'failed'>(data?.whatsappSent ? 'sent' : null);
++    const [upiId, setUpiId] = useState<string>('');
++
++    useImperativeHandle(ref, () => exportRef.current as HTMLDivElement);
++
++    /* ΓöÇ Fetch UPI ID ΓöÇ */
++    useEffect(() => {
++      getDoc(doc(db, 'settings', 'app'))
++        .then(snap => { if (snap.exists() && snap.data().upiId) setUpiId(snap.data().upiId); })
++        .catch(() => {});
++    }, []);
++
++    /* ΓöÇ Derived values ΓöÇ */
++    const createdAt   = !isBlank && data?.createdAt ? new Date(data.createdAt) : new Date();
++    const displayYear = currentYear ?? data?.year ?? createdAt.getFullYear();
++    const receiptNo   = isBlank ? `GSB-${displayYear}-____` : (data?.receiptNo || `GSB-${displayYear}-0001`);
++    const totalAmt    = Number(data?.totalAmount ?? 0);
++    const paidAmt     = Number(data?.paidAmount ?? 0);
++    const pendingAmt  = Math.max(Number(data?.pendingAmount ?? (totalAmt - paidAmt)), 0);
++    const members     = parseFamilyMembers(data?.familyMembers);
++    const isVip       = Boolean(data?.gotram?.trim()) || members.length > 0;
++    const isAck       = paidAmt === 0;
++    const payMode     = (data?.paymentMode || 'Cash').toUpperCase();
++
++    /* ΓöÇ Advanced Dynamic UPI QR Logic ΓöÇ */
++    const isUnpaid       = paidAmt === 0;
++    const isPartial      = paidAmt > 0 && pendingAmt > 0;
++    const isFullyPaid    = pendingAmt === 0 && paidAmt > 0;
++
++    // Show Payment QR if there's any pending amount
++    const showPaymentQR  = (isUnpaid || isPartial) && !!upiId;
++    
++    // Show Verification QR only if fully paid and not Cash
++    const showVerifyQR   = isFullyPaid && !payMode.includes('CASH');
++    
++    const showQR         = showPaymentQR || showVerifyQR;
++
++    // Build standard UPI string: upi://pay?pa={UPI_ID}&pn={APP_NAME}&am={PENDING_AMOUNT}&cu=INR
++    const upiQrValue = useMemo(() => {
++      if (!upiId || pendingAmt <= 0) return '';
++      // Cross-platform compatible display name
++      const appName = 'SVSVBB'; 
++      const transactionNote = `Receipt-${receiptNo}`;
++      
++      return `upi://pay?pa=${upiId}&pn=${encodeURIComponent(appName)}&am=${pendingAmt.toFixed(2)}&cu=INR&tn=${encodeURIComponent(transactionNote)}`;
++    }, [upiId, pendingAmt, receiptNo]);
++    const verifyQrValue = useMemo(() =>
++      [`SVSVBB Receipt`, `No: ${receiptNo}`, `Year: ${displayYear}`,
++       `Name: ${data?.name || '-'}`, `Ph: ${data?.phone || '-'}`,
++       `Total: ${totalAmt}`, `Paid: ${paidAmt}`, `Pending: ${pendingAmt}`, `Mode: ${payMode}`].join('\n'),
++      [data?.name, data?.phone, displayYear, paidAmt, pendingAmt, payMode, receiptNo, totalAmt],
++    );
++
++    const dateLabel = isBlank ? 'DD/MM/YYYY' : new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(createdAt);
++    const timeLabel = isBlank ? '--:-- --'   : new Intl.DateTimeFormat('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).format(createdAt);
++
++    /* ΓöÇ Export helpers ΓöÇ */
++    const capture = async () => {
++      if (!exportRef.current) return null;
++      return html2canvas(exportRef.current, {
++        scale: 3, useCORS: true, backgroundColor: '#ffffff', logging: false,
++        windowWidth: exportRef.current.scrollWidth,
++        windowHeight: exportRef.current.scrollHeight,
++      });
++    };
++
++    const blobDownload = (blob: Blob, name: string) => {
++      const url = URL.createObjectURL(blob);
++      const a = document.createElement('a');
++      a.href = url; a.download = name;
++      document.body.appendChild(a); a.click();
++      document.body.removeChild(a); URL.revokeObjectURL(url);
++    };
++
++    const withLoading = async (key: string, fn: () => Promise<void>) => {
++      setLoading(key);
++      try { await fn(); } finally { setLoading(null); }
++    };
++
++    const downloadPDF = () => withLoading('pdf', async () => {
++      const canvas = await capture(); if (!canvas) return;
++      // A4 dimensions in mm
++      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
++      const pageW = pdf.internal.pageSize.getWidth();   // 210mm
++      const pageH = pdf.internal.pageSize.getHeight();  // 297mm
++      const margin = 12;
++      const imgW = pageW - margin * 2;
++      const imgH = (canvas.height * imgW) / canvas.width;
++      // Center vertically if short, or clip/page if tall
++      const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
++      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, yOffset, imgW, imgH, '', 'FAST');
++      blobDownload(pdf.output('blob'), `${receiptNo}.pdf`);
++    });
++
++    const downloadImage = () => withLoading('img', async () => {
++      const canvas = await capture(); if (!canvas) return;
++      canvas.toBlob(blob => { if (blob) blobDownload(blob, `${receiptNo}.png`); }, 'image/png', 1);
++    });
++
++    const shareWhatsApp = () => withLoading('wa', async () => {
++      const canvas = await capture(); if (!canvas) return;
++      
++      // Generate PDF
++      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
++      const pageW = pdf.internal.pageSize.getWidth();
++      const pageH = pdf.internal.pageSize.getHeight();
++      const margin = 12;
++      const imgW = pageW - margin * 2;
++      const imgH = (canvas.height * imgW) / canvas.width;
++      const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
++      pdf.addImage(canvas.toDataURL('image/jpeg', 0.8), 'JPEG', margin, yOffset, imgW, imgH, '', 'FAST');
++      
++      const pdfBlob = pdf.output('blob');
++      const file = new File([pdfBlob], `${receiptNo}.pdf`, { type: 'application/pdf' });
++
++      if (navigator.canShare?.({ files: [file] })) {
++        try {
++          await navigator.share({
++            files: [file],
++            title: isAck ? 'Acknowledgement Receipt' : 'Payment Receipt',
++            text: `≡ƒÖÅ Receipt for ${data?.name || 'Devotee'} | ${receiptNo}`,
++          });
++        } catch (err) {
++          console.warn('Share failed:', err);
++          const msg = encodeURIComponent(`≡ƒÖÅ *SVSVBB Receipt*\nName: ${data?.name}\nReceipt: ${receiptNo}\nPaid: ${fmt(paidAmt)}\nPending: ${fmt(pendingAmt)}`);
++          window.open(`https://wa.me/?text=${msg}`, '_blank');
++        }
++      } else {
++        const msg = encodeURIComponent(`≡ƒÖÅ *SVSVBB Receipt*\nName: ${data?.name}\nReceipt: ${receiptNo}\nPaid: ${fmt(paidAmt)}\nPending: ${fmt(pendingAmt)}`);
++        window.open(`https://wa.me/?text=${msg}`, '_blank');
++      }
++    });
++
++    /* ΓöÇ NEW: Automated Meta API Flow ΓöÇ */
++    const autoSendWhatsApp = async (silent = false) => {
++      // 1. DUPLICATE PREVENTION
++      if (data?.whatsappSent || waStatus === 'sent') {
++        if (!silent) toast.error('WhatsApp message already sent.');
++        return;
++      }
++
++      // 2. SEND CONDITIONS (COST OPTIMIZATION)
++      const paidAmt = Number(data?.paidAmount ?? 0);
++      const totalAmt = Number(data?.totalAmount ?? 0);
++      const isFullyPaid = (totalAmt > 0 && pendingAmt === 0);
++      if (paidAmt <= 0 && !isFullyPaid) {
++        if (!silent) toast.error('Will not send WhatsApp for unpaid entries.');
++        return;
++      }
++
++      if (!data?.phone || !data?.name) {
++        if (!silent) toast.error('Phone and Name are required');
++        return;
++      }
++
++      setWaStatus('sending');
++      await withLoading('auto-wa', async () => {
++        try {
++          const canvas = await capture(); if (!canvas) {
++            setWaStatus(null);
++            if (!silent) toast.error('Failed to capture receipt image.');
++            return;
++          }
++          
++          // 1. Generate PDF
++          const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
++          const pageW = pdf.internal.pageSize.getWidth();
++          const pageH = pdf.internal.pageSize.getHeight();
++          const margin = 12;
++          const imgW = pageW - margin * 2;
++          const imgH = (canvas.height * imgW) / canvas.width;
++          const yOffset = imgH < (pageH - margin * 2) ? (pageH - imgH) / 2 : margin;
++          pdf.addImage(canvas.toDataURL('image/jpeg', 0.8), 'JPEG', margin, yOffset, imgW, imgH, '', 'FAST');
++          
++          const pdfBlob = pdf.output('blob');
++          
++          // 2. Upload to Firebase Storage
++          const storageReference = sRef(storage, `receipts/${displayYear}/${receiptNo}.pdf`);
++          const snapshot = await uploadBytes(storageReference, pdfBlob, { contentType: 'application/pdf' });
++          const downloadUrl = await getDownloadURL(snapshot.ref);
++
++          // 3. Call server for WhatsApp
++          const baseUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
++              ? 'http://localhost:3001' 
++              : ''; // Fallback for production if they deploy server.js alongside the frontend
++
++          let success = false;
++          let retries = 2;
++          let lastError: any = null;
++
++          while (retries >= 0 && !success) {
++            try {
++              const response = await fetch(`${baseUrl}/api/whatsapp`, {
++                method: 'POST',
++                headers: { 'Content-Type': 'application/json' },
++                body: JSON.stringify({ phone: data.phone, name: data.name, amount: data.paidAmount, pdfUrl: downloadUrl })
++              });
++
++              if (!response.ok) {
++                 const errText = await response.text();
++                 throw new Error(errText || 'Local server rejected WhatsApp request');
++              }
++              const result = await response.json();
++              if (result.success === false) {
++                 throw new Error(result.message || 'WhatsApp sending failed within Server');
++              }
++
++              success = true;
++              if (!silent) toast.success('Official WhatsApp Receipt Sent!', { duration: 4000 });
++              
++              setWaStatus('sent');
++              
++              // 4. LOGGING & DUPLICATE PREVENTION
++              if (data.id && data.id !== 'new') {
++                await updateDoc(doc(db, 'devotees', data.id), {
++                   whatsappSent: true,
++                   lastSentTime: serverTimestamp(),
++                   whatsappStatus: 'success'
++                });
++                data.whatsappSent = true;
++              }
++
++            } catch (err: any) {
++              lastError = err;
++              if (retries > 0) {
++                if (!silent) toast(`Retrying WhatsApp... ${retries} attempts left`, { icon: '≡ƒöä', duration: 2000 });
++                await new Promise(r => setTimeout(r, 2000));
++              }
++              retries--;
++            }
++          }
++
++          if (!success && lastError) {
++            throw lastError;
++          }
++        } catch (err: any) {
++          console.error('AutoSend Error:', err);
++          setWaStatus('failed');
++          const errMsg = err.message || 'Failed to send WhatsApp';
++          if (!silent) toast.error(errMsg);
++          
++          if (data?.id && data.id !== 'new') {
++             await updateDoc(doc(db, 'devotees', data.id), {
++                lastSentTime: serverTimestamp(),
++                whatsappStatus: 'failed',
++                whatsappError: errMsg
++             }).catch(console.error);
++          }
++        }
++      });
++    };
++
++    // Auto-trigger if fresh data and not already sent (optional logic can be added here)
++    useEffect(() => {
++        if (data?.receiptNo && data?.phone && !data?.phone.includes('_') && !isBlank && !data?.whatsappSent) {
++          // Auto-send on first load
++          autoSendWhatsApp(true); 
++        }
++    }, [data?.receiptNo]);
++
++    const shareSMS = () => {
++      const msg = isAck ? 
++        `α░╢α▒ìα░░α▒Ç α░╡α░░α░╕α░┐α░ªα▒ìα░ºα░┐ α░╡α░┐α░¿α░╛α░»α░ò α░¡α░òα▒ìα░ñ α░¼α▒âα░éα░ªα░é - ${displayYear}\n\nα░¬α▒çα░░α▒ü: ${data?.name}\nα░«α▒èα░ñα▒ìα░ñα░é: ${fmt(totalAmt)}\n\nα░«α▒Ç α░╡α░┐α░╡α░░α░╛α░▓α▒ü α░¿α░«α▒ïα░ªα▒ü α░Üα▒çα░»α░¼α░íα▒ìα░íα░╛α░»α░┐.\nα░Üα▒åα░▓α▒ìα░▓α░┐α░éα░¬α▒ü α░¬α▒åα░éα░íα░┐α░éα░ùα▒ìα░▓α▒ï α░ëα░éα░ªα░┐.\n\nα░ºα░¿α▒ìα░»α░╡α░╛α░ªα░╛α░▓α▒ü ≡ƒÖÅ` :
++        `α░╢α▒ìα░░α▒Ç α░╡α░░α░╕α░┐α░ªα▒ìα░ºα░┐ α░╡α░┐α░¿α░╛α░»α░ò α░¡α░òα▒ìα░ñ α░¼α▒âα░éα░ªα░é - ${displayYear}\n\nα░¬α▒çα░░α▒ü: ${data?.name}\nα░Üα▒åα░▓α▒ìα░▓α░┐α░éα░Üα░┐α░¿ α░«α▒èα░ñα▒ìα░ñα░é: ${fmt(paidAmt)}\nα░░α░╕α▒Çα░ªα▒ü α░¿α░é: ${receiptNo}\n${pendingAmt > 0 ? `\nα░«α░┐α░ùα░┐α░▓α░┐α░¿ α░«α▒èα░ñα▒ìα░ñα░é: ${fmt(pendingAmt)}\nα░ªα░»α░Üα▒çα░╕α░┐ α░Üα▒åα░▓α▒ìα░▓α░┐α░éα░Üα░éα░íα░┐.\n` : ''}\nα░ºα░¿α▒ìα░»α░╡α░╛α░ªα░╛α░▓α▒ü ≡ƒÖÅ`;
++
++      window.open(`sms:${data?.phone}?body=${encodeURIComponent(msg)}`, '_blank');
++    };
++
++    const BtnClass = (color: string) =>
++      `inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 shadow-md ${color}`;
++
++    return (
++      <div className="w-full">
++        {/* ΓöÇΓöÇ Action Buttons ΓöÇΓöÇ */}
++        <div className="flex flex-wrap items-center justify-center gap-3 mb-5 print:hidden">
++          <button onClick={downloadPDF} disabled={!!loading} className={BtnClass('bg-red-600 text-white hover:bg-red-700')}>
++            {loading === 'pdf' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Download PDF
++          </button>
++          <button onClick={downloadImage} disabled={!!loading} className={BtnClass('bg-amber-500 text-white hover:bg-amber-600')}>
++            {loading === 'img' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />} Save Image
++          </button>
++          <button onClick={shareWhatsApp} disabled={!!loading} className={BtnClass('bg-green-500 text-white hover:bg-green-600')}>
++            {loading === 'wa' ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} WhatsApp
++          </button>
++          
++          {/* ΓöÇΓöÇ NEW: Automated WhatsApp ΓöÇΓöÇ */}
++          <button 
++            onClick={() => autoSendWhatsApp()} 
++            disabled={!!loading || waStatus === 'sent'} 
++            className={BtnClass(
++              waStatus === 'sent' ? 'bg-emerald-600 text-white cursor-not-allowed' : 
++              waStatus === 'failed' ? 'bg-red-600 text-white hover:bg-red-700' : 
++              'bg-emerald-700 text-white hover:bg-emerald-800 border-2 border-emerald-400 ' + (waStatus === 'sending' ? 'animate-pulse' : '')
++            )}
++          >
++            {waStatus === 'sending' ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} 
++            {waStatus === 'sending' ? 'Sending...' : waStatus === 'sent' ? 'Sent Γ£à' : waStatus === 'failed' ? 'Failed Γ¥î (Retry)' : 'Official WhatsApp'}
++          </button>
++
++          <button onClick={shareSMS} className={BtnClass('bg-blue-600 text-white hover:bg-blue-700')}>
++            <Share2 size={16} /> SMS
++          </button>
++          <button onClick={() => window.print()} disabled={!!loading} className={BtnClass('bg-gray-700 text-white hover:bg-gray-800')}>
++            <Printer size={16} /> Print
++          </button>
++        </div>
++
++        {/* ΓöÇΓöÇ A4 Receipt Card ΓöÇΓöÇ
++            794px Γëê A4 width at 96dpi.
++            We use a fixed width so the layout is always consistent for PDF/print.
++        ΓöÇΓöÇ */}
++        <div
++          ref={exportRef}
++          className="relative mx-auto overflow-hidden bg-white border-2 border-amber-400 shadow-2xl"
++          style={{
++            width: '794px',
++            minHeight: '1123px',
++            fontFamily: "'Segoe UI', 'Noto Sans Telugu', sans-serif",
++            breakInside: 'avoid',
++          }}
++        >
++          {/* ΓöÇΓöÇ FULL-PAGE WATERMARK ΓöÇΓöÇ */}
++          <div
++            className="pointer-events-none select-none absolute inset-0 flex items-center justify-center z-0"
++          >
++            <img
++              src={logoSrc}
++              alt=""
++              style={{ width: '480px', height: '480px', objectFit: 'cover', borderRadius: '50%', opacity: 0.14 }}
++            />
++          </div>
++
++          {/* ΓöÇΓöÇ INNER CONTENT (above watermark) ΓöÇΓöÇ */}
++          <div className="relative z-10 flex flex-col h-full" style={{ minHeight: '1123px' }}>
++
++            {/* ΓòÉΓòÉΓòÉΓòÉ HEADER ΓòÉΓòÉΓòÉΓòÉ */}
++            <div
++              className="flex items-center justify-between px-10 py-6 border-b-4 border-amber-400"
++              style={{ background: 'linear-gradient(135deg, rgba(255,247,237,0.85) 0%, rgba(254,243,199,0.85) 50%, rgba(255,247,237,0.85) 100%)' }}
++            >
++              {/* Left Logo */}
++              <img
++                src={logoSrc} alt="Logo"
++                style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
++              />
++
++              {/* Center Text */}
++              <div style={{ textAlign: 'center', flex: 1, padding: '0 24px' }}>
++                <p style={{ fontSize: '22px', fontWeight: 900, color: '#7c2d12', lineHeight: 1.3, letterSpacing: '0.02em' }}>
++                  α░╢α▒ìα░░α▒Ç α░╡α░░α░╕α░┐α░ªα▒ìα░ºα░┐ α░╡α░┐α░¿α░╛α░»α░ò α░¡α░òα▒ìα░ñ α░¼α▒âα░éα░ªα░é
++                </p>
++                <p style={{ fontSize: '11px', fontWeight: 800, color: '#b45309', letterSpacing: '0.3em', marginTop: '4px', textTransform: 'uppercase' }}>
++                  ΓÇö Sparkling Youth ΓÇö {displayYear} ΓÇö
++                </p>
++                <p style={{ fontSize: '12px', fontWeight: 600, color: '#92400e', marginTop: '3px' }}>
++                  α░¿α▒ìα░»α▒é α░òα▒âα░╖α▒ìα░ú α░¿α░ùα░░α▒ì, α░òα░░α▒ìα░¿α▒éα░▓α▒ü
++                </p>
++              </div>
++
++              {/* Right Logo */}
++              <img
++                src={logoSrc} alt="Logo"
++                style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #f59e0b', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
++              />
++            </div>
++
++            {/* ΓòÉΓòÉΓòÉΓòÉ RECEIPT TYPE BANNER ΓòÉΓòÉΓòÉΓòÉ */}
++            <div style={{
++              background: isAck
++                ? 'linear-gradient(90deg, #ea580c, #f97316)'
++                : 'linear-gradient(90deg, #059669, #0d9488)',
++              padding: '12px 40px',
++              textAlign: 'center',
++            }}>
++              <p style={{ color: '#fff', fontWeight: 900, fontSize: '15px', letterSpacing: '0.25em', textTransform: 'uppercase' }}>
++                {isAck ? 'ΓÜá  Acknowledgement Receipt  ΓÜá' : 'Γ£à  Payment Receipt'}
++              </p>
++              {isAck && (
++                <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '11px', fontWeight: 700, marginTop: '3px', letterSpacing: '0.1em' }}>
++                  STATUS: UNPAID ΓÇó PAYMENT PENDING
++                </p>
++              )}
++              {!isAck && pendingAmt > 0 && (
++                <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '11px', fontWeight: 700, marginTop: '3px', letterSpacing: '0.1em' }}>
++                  PARTIAL PAYMENT ΓÇó BALANCE PENDING: {fmt(pendingAmt)}
++                </p>
++              )}
++            </div>
++
++            {/* ΓòÉΓòÉΓòÉΓòÉ MAIN BODY ΓòÉΓòÉΓòÉΓòÉ */}
++            <div style={{ padding: '28px 40px', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
++
++              {/* ΓöÇΓöÇ Row 1: Receipt No / Date / Time / Phone ΓöÇΓöÇ */}
++              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
++                {[
++                  { label: 'Receipt No', value: receiptNo },
++                  { label: 'Date',       value: dateLabel },
++                  { label: 'Time',       value: timeLabel },
++                  { label: 'Phone',      value: isBlank ? '__________' : (data?.phone || 'ΓÇö') },
++                ].map(item => (
++                  <div key={item.label} style={{
++                    background: 'rgba(255,251,235,0.65)',
++                    border: '1px solid #fcd34d',
++                    borderRadius: '10px',
++                    padding: '12px 14px',
++                  }}>
++                    <p style={{ fontSize: '9px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '5px' }}>
++                      {item.label}
++                    </p>
++                    <p style={{ fontSize: '13px', fontWeight: 800, color: '#450a0a', wordBreak: 'break-all', lineHeight: 1.3 }}>
++                      {item.value}
++                    </p>
++                  </div>
++                ))}
++              </div>
++
++              {/* ΓöÇΓöÇ Devotee Name ΓöÇΓöÇ */}
++              <div style={{
++                background: 'linear-gradient(135deg, rgba(255,247,237,0.4), rgba(254,243,199,0.4))',
++                border: '2px solid rgba(245, 158, 11, 0.5)',
++                borderRadius: '12px',
++                padding: '16px 20px',
++              }}>
++                <p style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '8px' }}>
++                  Devotee Name
++                </p>
++                <p style={{ fontSize: '26px', fontWeight: 900, color: '#7c2d12', lineHeight: 1.2 }}>
++                  {isBlank ? '________________________________' : (data?.name || 'ΓÇö')}
++                </p>
++              </div>
++
++              {/* ΓöÇΓöÇ Payment Details ΓöÇΓöÇ */}
++              <div style={{
++                background: 'rgba(255,251,235,0.4)',
++                border: '1px solid rgba(252, 211, 77, 0.5)',
++                borderRadius: '12px',
++                padding: '18px 20px',
++              }}>
++                <p style={{ fontSize: '10px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '12px' }}>
++                  Payment Details
++                </p>
++                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
++                  <tbody>
++                    {[
++                      { label: 'Total Amount',  value: fmt(totalAmt), color: '#450a0a' },
++                      { label: 'Paid Amount',   value: fmt(paidAmt),  color: paidAmt > 0 ? '#065f46' : '#450a0a' },
++                      { label: 'Pending Amount',value: pendingAmt > 0 ? fmt(pendingAmt) : 'Γé╣0 ΓÇö Cleared',
++                                                 color: pendingAmt > 0 ? '#991b1b' : '#065f46' },
++                      { label: 'Payment Mode',  value: data?.paymentMode || (isBlank ? '________' : 'Cash'), color: '#450a0a' },
++                    ].map((row, i, arr) => (
++                      <tr key={row.label} style={{ borderBottom: i < arr.length - 1 ? '1px solid #fde68a' : 'none' }}>
++                        <td style={{ padding: '11px 0', fontSize: '13px', fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
++                          {row.label}
++                        </td>
++                        <td style={{ padding: '11px 0', fontSize: '16px', fontWeight: 900, color: row.color, textAlign: 'right' }}>
++                          {row.value}
++                        </td>
++                      </tr>
++                    ))}
++                  </tbody>
++                </table>
++              </div>
++
++              {/* ΓöÇΓöÇ Donation Item (conditional) ΓöÇΓöÇ */}
++              {data?.donationItem && (
++                <div style={{
++                  background: 'rgba(255,247,237,0.65)',
++                  border: '1px solid #fdba74',
++                  borderRadius: '10px',
++                  padding: '14px 20px',
++                }}>
++                  <p style={{ fontSize: '9px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '5px' }}>
++                    Offering / Donation Item
++                  </p>
++                  <p style={{ fontSize: '15px', fontWeight: 800, color: '#450a0a' }}>{data.donationItem}</p>
++                </div>
++              )}
++
++              {/* ΓöÇΓöÇ VIP Section (conditional) ΓöÇΓöÇ */}
++              {isVip && (
++                <div style={{
++                  background: 'rgba(254,252,232,0.7)',
++                  border: '2px solid #eab308',
++                  borderRadius: '12px',
++                  padding: '16px 20px',
++                  textAlign: 'center',
++                }}>
++                  <p style={{ fontSize: '10px', fontWeight: 900, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.35em', marginBottom: '8px' }}>
++                    Γ¡É  VIP Gotram Entry  Γ¡É
++                  </p>
++                  <p style={{ fontSize: '22px', fontWeight: 900, color: '#7c2d12' }}>
++                    {data?.gotram || 'Special Entry'}
++                  </p>
++                  {members.length > 0 && (
++                    <p style={{ fontSize: '13px', fontWeight: 600, color: '#57534e', marginTop: '8px', lineHeight: 1.8 }}>
++                      {members.join('  ΓÇó  ')}
++                    </p>
++                  )}
++                </div>
++              )}
++
++              {/* ΓöÇΓöÇ Footer: Collected By + QR ΓöÇΓöÇ */}
++              <div style={{
++                background: 'rgba(255,251,235,0.65)',
++                border: '1px solid #fcd34d',
++                borderRadius: '12px',
++                padding: '18px 20px',
++                display: 'flex',
++                alignItems: 'flex-end',
++                justifyContent: 'space-between',
++                gap: '20px',
++                marginTop: 'auto',
++              }}>
++                {/* Left: Collected By */}
++                <div style={{ flex: 1 }}>
++                  <p style={{ fontSize: '9px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.2em', marginBottom: '6px' }}>
++                    Collected By
++                  </p>
++                  <p style={{ fontSize: '17px', fontWeight: 900, color: '#450a0a', marginBottom: '2px' }}>
++                    {isBlank ? '________________________' : (data?.volunteerName || 'Admin')}
++                  </p>
++                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#92400e', marginBottom: '16px' }}>
++                    {isBlank ? 'Mobile: ____________' : (data?.volunteerPhone ? `Mobile: ${data.volunteerPhone}` : '')}
++                  </p>
++
++                  {/* UPI badge */}
++                  {showPaymentQR && (
++                    <div style={{
++                      display: 'inline-flex', alignItems: 'center', gap: '6px',
++                      background: '#fff7ed', border: '1px solid #fdba74',
++                      borderRadius: '8px', padding: '6px 12px', marginBottom: '14px',
++                    }}>
++                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
++                        ≡ƒÆ│ Payment Pending ΓÇö UPI Available
++                      </span>
++                    </div>
++                  )}
++
++                  {/* Signature */}
++                  <div>
++                    <div style={{ width: '120px', height: '1px', background: '#f59e0b', marginTop: '32px' }} />
++                    <p style={{ fontSize: '9px', color: '#b45309', fontWeight: 700, marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
++                      Authorised Signature
++                    </p>
++                  </div>
++                </div>
++
++                {/* Right: QR Code */}
++                {showQR && (
++                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
++                    <div style={{
++                      background: '#fff',
++                      border: '3px solid #f59e0b',
++                      borderRadius: '16px',
++                      padding: '12px',
++                      boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
++                    }}>
++                      <QRCodeSVG
++                        value={showPaymentQR ? upiQrValue : verifyQrValue}
++                        size={120} // Size 120pxΓÇô140px as requested
++                        marginSize={2}
++                        bgColor="#ffffff"
++                        fgColor={showPaymentQR ? '#000000' : '#450a0a'}
++                        level="H" // High resolution/error correction
++                      />
++                    </div>
++                    <p style={{
++                      fontSize: '10px',
++                      fontWeight: 900,
++                      textAlign: 'center',
++                      maxWidth: '140px',
++                      lineHeight: 1.4,
++                      color: showPaymentQR ? '#059669' : '#92400e',
++                      textTransform: 'uppercase',
++                      letterSpacing: '0.06em',
++                    }}>
++                      {showPaymentQR ? 'Scan & Pay Remaining Amount' : 'Scan to verify receipt'}
++                    </p>
++                  </div>
++                )}
++              </div>
++            </div>
++
++            {/* ΓòÉΓòÉΓòÉΓòÉ BOTTOM FOOTER ΓòÉΓòÉΓòÉΓòÉ */}
++            <div style={{
++              background: 'linear-gradient(135deg, rgba(255,247,237,0.8), rgba(254,243,199,0.8))',
++              borderTop: '3px solid #f59e0b',
++              padding: '16px 40px',
++              textAlign: 'center',
++            }}>
++              <p style={{ fontSize: '20px', fontWeight: 900, color: '#7c2d12', letterSpacing: '0.03em' }}>
++                ≡ƒÖÅ α░ºα░¿α▒ìα░»α░╡α░╛α░ªα░╛α░▓α▒ü ≡ƒÖÅ
++              </p>
++              <p style={{ fontSize: '11px', fontWeight: 700, color: '#b45309', marginTop: '4px', letterSpacing: '0.08em' }}>
++                Γ£¿ α░╢α▒ìα░░α▒Ç α░╡α░░α░╕α░┐α░ªα▒ìα░ºα░┐ α░╡α░┐α░¿α░╛α░»α░ò α░¡α░òα▒ìα░ñ α░¼α▒âα░éα░ªα░é α░ñα░░α░¬α▒üα░¿ Γ£¿
++              </p>
++            </div>
++          </div>
++        </div>
++      </div>
++    );
++  },
++);
++
++Receipt.displayName = 'Receipt';

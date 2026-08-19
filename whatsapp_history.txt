@@ -1,0 +1,76 @@
+﻿commit 6c0575009bba2b305cb2e0e1956a2fd97808c483
+Author: Bharath Kumar <23ata05181@gpcet.ac.in>
+Date:   Tue Aug 18 13:44:36 2026 +0530
+
+    Implement final direct WhatsApp PDF receipt URL feature
+
+diff --git a/src/lib/whatsapp.ts b/src/lib/whatsapp.ts
+index 3434b59..068f406 100644
+--- a/src/lib/whatsapp.ts
++++ b/src/lib/whatsapp.ts
+@@ -22,7 +22,7 @@ export const shareReceiptWhatsApp = (devotee: any, receiptUrl: string, template?
+     festivalYear: new Date().getFullYear().toString(),
+   };
+ 
+-  const text = hydrateTemplate(template || DEFAULT_CHANDA_CONFIRMATION, payload);
++  const text = hydrateTemplate(DEFAULT_CHANDA_CONFIRMATION, payload);
+ 
+   let encodedText = encodeURIComponent(text);
+   if (receiptUrl) {
+
+commit 2a3bef79f49359029a6633c30dcf6f1d16625f20
+Author: Bharath Kumar <23ata05181@gpcet.ac.in>
+Date:   Sun Aug 2 19:05:40 2026 +0530
+
+    feat: implement centralized Telugu message templates, pooja portal privacy, global logo, and password reset
+
+diff --git a/src/lib/whatsapp.ts b/src/lib/whatsapp.ts
+new file mode 100644
+index 0000000..3434b59
+--- /dev/null
++++ b/src/lib/whatsapp.ts
+@@ -0,0 +1,44 @@
++import { getWhatsAppNumber } from './privacy';
++import { format } from 'date-fns';
++import { hydrateTemplate, DEFAULT_CHANDA_CONFIRMATION } from './templates';
++
++export const shareReceiptWhatsApp = (devotee: any, receiptUrl: string, template?: string) => {
++  const targetPhone = getWhatsAppNumber(devotee.phone);
++  if (!targetPhone) {
++    alert("Invalid or missing phone number for WhatsApp sharing.");
++    return;
++  }
++
++  const dateValue = devotee.date || devotee.createdAt;
++  const formattedDate = dateValue ? format(new Date(dateValue), 'dd MMM yyyy') : new Date().toLocaleDateString('en-IN');
++  const amount = devotee.totalAmount || devotee.paidAmount || 0;
++
++  const payload = {
++    name: devotee.name || '',
++    receiptNo: devotee.receiptNo || '',
++    date: formattedDate,
++    amount: amount,
++    receiptLink: receiptUrl,
++    festivalYear: new Date().getFullYear().toString(),
++  };
++
++  const text = hydrateTemplate(template || DEFAULT_CHANDA_CONFIRMATION, payload);
++
++  let encodedText = encodeURIComponent(text);
++  if (receiptUrl) {
++    encodedText = encodedText.replace(encodeURIComponent(receiptUrl), receiptUrl);
++  }
++
++  const waLink = `https://wa.me/${targetPhone}?text=${encodedText}`;
++  window.open(waLink, '_blank');
++};
++
++export const openWhatsAppChat = (phone: string | undefined | null, message: string) => {
++  const targetPhone = getWhatsAppNumber(phone);
++  if (!targetPhone) {
++    alert("Invalid or missing phone number for WhatsApp.");
++    return;
++  }
++  const waLink = `https://wa.me/${targetPhone}?text=${encodeURIComponent(message)}`;
++  window.open(waLink, '_blank');
++};
